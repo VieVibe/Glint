@@ -40,12 +40,26 @@ jobs:
           $release = $releases | Where-Object tag_name -eq $env:RELEASE_TAG | Select-Object -First 1
           if ($LASTEXITCODE -ne 0 -or -not $release.draft) { throw 'Prepare a draft release first.' }
           if ($release.assets.Count -gt 0) { throw 'Expected a draft with no attachments.' }
-      - name: Run checks
-        shell: pwsh
-        run: ./scripts/dev.ps1 check
       - name: Build portable package
         shell: pwsh
         run: ./scripts/package-release.ps1
+      - name: Check portable startup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # The full checks run on a Chinese Windows desktop before tagging.
+          # WScript.Shell cannot create the harness's Chinese shortcut fixture on this English runner.
+          $exe = Join-Path "artifacts/releases/$($env:RELEASE_TAG.Substring(1))/Glint-win-x64" 'Glint.exe'
+          $process = Start-Process -FilePath $exe -ArgumentList '--background' -PassThru
+          try {
+            Start-Sleep -Seconds 3
+            $process.Refresh()
+            if ($process.HasExited) { throw 'Portable application exited during startup.' }
+          } finally {
+            Start-Process -FilePath $exe -ArgumentList '--exit' -Wait
+            if (-not $process.WaitForExit(10000)) { throw 'Portable application did not exit cleanly.' }
+          }
+          if ($process.ExitCode -ne 0) { throw 'Portable application returned an error.' }
       - name: Upload, verify and publish
         shell: pwsh
         run: |
