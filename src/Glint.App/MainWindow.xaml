@@ -59,6 +59,9 @@
                                 </MenuItem>
                                 <MenuItem x:Name="StartupMenu" Header="开机启动" IsCheckable="True" Click="OnStartupClick" />
                                 <Separator />
+                                <MenuItem Header="作者 GitHub · VieVibe" Click="OnAuthorGitHubClick" ToolTip="https://github.com/VieVibe" />
+                                <MenuItem Header="项目主页与反馈" Click="OnProjectGitHubClick" ToolTip="https://github.com/VieVibe/Glint" />
+                                <Separator />
                                 <MenuItem Header="退出轻启" Click="OnExitClick" />
                             </ContextMenu>
                         </Button.ContextMenu>

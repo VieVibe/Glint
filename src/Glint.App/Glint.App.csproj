@@ -10,7 +10,7 @@
     <!-- WPF owns startup and DPI; WinForms is used only for the tray and screen information. -->
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
     <AssemblyName>Glint</AssemblyName>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <RootNamespace>Glint.App</RootNamespace>
   </PropertyGroup>
   <ItemGroup>

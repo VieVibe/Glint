@@ -15,3 +15,5 @@ F2：设置；F5：刷新应用列表。
 
 此版本处于早期迭代阶段，部分输入法、商店应用与多屏场景仍在完善，尚未进行代码签名。
 项目与问题反馈：https://github.com/VieVibe/Glint
+作者 GitHub：https://github.com/VieVibe
+也可以通过软件设置菜单或托盘右键菜单打开上述链接。

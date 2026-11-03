@@ -91,6 +91,9 @@ public partial class MainWindow : Window
         menu.Items.Add("打开轻启", null, (_, _) => Dispatcher.Invoke(ShowLauncher));
         menu.Items.Add("刷新应用列表", null, (_, _) => Dispatcher.Invoke(() => { _ = RefreshIndexAsync(); }));
         menu.Items.Add(new Forms.ToolStripSeparator());
+        menu.Items.Add("作者 GitHub · VieVibe", null, (_, _) => Dispatcher.Invoke(() => OpenGitHub("https://github.com/VieVibe")));
+        menu.Items.Add("项目主页与反馈", null, (_, _) => Dispatcher.Invoke(() => OpenGitHub("https://github.com/VieVibe/Glint")));
+        menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("退出轻启", null, (_, _) => Dispatcher.Invoke(ExitLauncher));
         tray = new Forms.NotifyIcon
         {
@@ -301,6 +304,19 @@ public partial class MainWindow : Window
         finally { dialogOpen = false; if (IsVisible) SearchBox.Focus(); }
     }
     private void OnHideClick(object sender, RoutedEventArgs e) => Hide();
+    private void OnAuthorGitHubClick(object sender, RoutedEventArgs e) => OpenGitHub("https://github.com/VieVibe");
+    private void OnProjectGitHubClick(object sender, RoutedEventArgs e) => OpenGitHub("https://github.com/VieVibe/Glint");
+
+    private void OpenGitHub(string url)
+    {
+        try { using var process = Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
+        {
+            ShowLauncher();
+            ShowNotice("无法打开浏览器，请手动访问：" + url);
+        }
+    }
+
     private void OnRefreshClick(object sender, RoutedEventArgs e) => _ = RefreshIndexAsync();
 
     private void OnSettingsClick(object sender, RoutedEventArgs e)
