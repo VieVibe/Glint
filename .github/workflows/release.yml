@@ -36,7 +36,8 @@ jobs:
           if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') { throw 'Expected a version tag.' }
           [xml]$project = Get-Content -Raw src/Glint.App/Glint.App.csproj
           if ('v' + [string]$project.Project.PropertyGroup.Version -ne $env:RELEASE_TAG) { throw 'Version mismatch.' }
-          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" | ConvertFrom-Json
+          $releases = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json
+          $release = $releases | Where-Object tag_name -eq $env:RELEASE_TAG | Select-Object -First 1
           if ($LASTEXITCODE -ne 0 -or -not $release.draft) { throw 'Prepare a draft release first.' }
           if ($release.assets.Count -gt 0) { throw 'Expected a draft with no attachments.' }
       - name: Run checks
@@ -53,7 +54,8 @@ jobs:
           $files = @('Glint-win-x64.zip', 'SHA256SUMS.txt')
           gh release upload $env:RELEASE_TAG (Join-Path $root $files[0]) (Join-Path $root $files[1]) --repo $env:GITHUB_REPOSITORY
           if ($LASTEXITCODE -ne 0) { throw 'Upload failed.' }
-          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" | ConvertFrom-Json
+          $releases = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json
+          $release = $releases | Where-Object tag_name -eq $env:RELEASE_TAG | Select-Object -First 1
           if ($LASTEXITCODE -ne 0 -or -not $release.draft) { throw 'Unable to verify draft.' }
           foreach ($name in $files) {
             $local = Get-Item (Join-Path $root $name)
@@ -63,5 +65,5 @@ jobs:
               throw "Attachment verification failed: $name"
             }
           }
-          gh release edit $env:RELEASE_TAG --draft=false --latest --repo $env:GITHUB_REPOSITORY
+          gh api --method PATCH "repos/$env:GITHUB_REPOSITORY/releases/$($release.id)" -F draft=false -f make_latest=true
           if ($LASTEXITCODE -ne 0) { throw 'Publishing failed.' }
