@@ -8,7 +8,9 @@ Windows 应用快捷搜索工具。按 `Alt+Space` 唤出，输入应用名称�
 
 ## 使用
 
-在 Windows 上按照下方开发步骤生成发布版本，然后运行 `artifacts/Glint-win-x64/Glint.exe`。发布目录包含运行所需文件，使用者无需另装 .NET；复制到其他位置时请保留整个目录。
+**[下载 Windows 64 位便携版](https://github.com/VieVibe/Glint/releases/latest/download/Glint-win-x64.zip)** · [全部版本](https://github.com/VieVibe/Glint/releases)
+
+下载 ZIP 并完整解压，运行其中的 `Glint.exe`。软件自带运行所需的 .NET，无需额外安装。复制到其他位置时请保留整个文件夹。首次启动后按 `Alt+Space` 唤出；退出请使用托盘菜单。
 
 - 中文、英文、全拼、首字母和常见别名搜索，例如 `微信 / weixin / wx / WeChat`。
 - `↑↓` 选择，`Enter` 启动，`Alt+1` 至 `Alt+8` 直接打开结果。
@@ -38,6 +40,8 @@ Windows 应用快捷搜索工具。按 `Alt+Space` 唤出，输入应用名称�
 .\scripts\dev.ps1 check
 .\scripts\dev.ps1 publish
 ```
+
+生成可分发 ZIP 与 SHA256 校验文件：在已提交的源码目录执行 `.\scripts\package-release.ps1`，产物位于 `artifacts/releases/<版本>/`。版本号来自应用项目的 `Version` 属性。
 
 脚本优先使用系统 SDK，未找到时使用 `%LOCALAPPDATA%\Microsoft\dotnet`，无需管理员权限。也可以在安装了匹配 SDK 的终端中运行 `dotnet build Glint.slnx`。
 
