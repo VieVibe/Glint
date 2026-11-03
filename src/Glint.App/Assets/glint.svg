@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 64 64">
+  <title>Glint — a keystroke of light</title>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="#315E45"/>
+  <path d="M37 10 41.5 21.5 54 26 41.5 30.5 37 43 32.5 30.5 21 26 32.5 21.5Z" fill="#F5F6DB"/>
+  <path d="M17 47 25 39" fill="none" stroke="#F5F6DB" stroke-width="5" stroke-linecap="round"/>
+</svg>

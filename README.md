@@ -1,0 +1,56 @@
+# 轻启 Glint
+
+<img src="src/Glint.App/Assets/glint.svg" width="64" height="64" alt="Glint 图标">
+
+Your apps, a keystroke away.
+
+Windows 应用快捷搜索工具。按 `Alt+Space` 唤出，输入应用名称，使用键盘启动。
+
+## 使用
+
+在 Windows 上按照下方开发步骤生成发布版本，然后运行 `artifacts/Glint-win-x64/Glint.exe`。发布目录包含运行所需文件，使用者无需另装 .NET；复制到其他位置时请保留整个目录。
+
+- 中文、英文、全拼、首字母和常见别名搜索，例如 `微信 / weixin / wx / WeChat`。
+- `↑↓` 选择，`Enter` 启动，`Alt+1` 至 `Alt+8` 直接打开结果。
+- 选中结果后，`Ctrl+D` 固定/取消固定，`Ctrl+E` 编辑搜索别名；也可以右键操作。固定应用会标注 `★`。
+- 自定义别名支持中文、英文和拼音匹配，使用逗号或换行分隔。编辑窗口中 `Ctrl+Enter` 保存，留空可清除。
+- `Esc`、再次按唤出快捷键或点击其他窗口可收起；后台托盘图标可打开或退出。
+- `F2` 打开设置，可添加/移除便携应用、修改快捷键、选择开机启动；`F5` 刷新索引。
+- 快捷键支持 `Alt+Space` 与 `Ctrl+Alt+Space`。注册失败会提示，不会自动抢占其他软件的快捷键。
+- 重复运行会唤出已有实例。`--background` 参数可只启动后台常驻。
+- `--exit` 可正常退出正在运行的实例，供本地更新流程使用。
+
+首次启动从开始菜单和 Windows 应用列表建立索引。开始菜单变化后会自动合并刷新请求，另有每十分钟一次的补充刷新；刷新不会清空搜索词或重置仍在结果中的选中项。输入时只匹配内存。设置、使用次数、固定应用和别名保存在 `%LOCALAPPDATA%\Glint\settings.json`，兼容旧版设置。开机启动默认关闭，只在用户勾选后写入当前用户的启动项。
+
+## 开发
+
+- C# / .NET 10 / WPF，Windows x64。
+- `src/Glint.App`：Windows 窗口和系统集成。
+- `src/Glint.Core`：应用目录、匹配和排序，避免依赖界面框架。
+- SDK 精确版本见 `global.json`。
+
+在项目目录中执行：
+
+```powershell
+.\scripts\dev.ps1 doctor
+.\scripts\dev.ps1 build
+.\scripts\dev.ps1 run
+.\scripts\dev.ps1 check
+.\scripts\dev.ps1 publish
+```
+
+脚本优先使用系统 SDK，未找到时使用 `%LOCALAPPDATA%\Microsoft\dotnet`，无需管理员权限。也可以在安装了匹配 SDK 的终端中运行 `dotnet build Glint.slnx`。
+
+首次开发前请安装 `global.json` 指定版本的 .NET SDK，安装方式见 [微软 Windows 安装说明](https://learn.microsoft.com/en-us/dotnet/core/install/windows)。
+
+`check` 执行搜索、排序、持久化和真实快捷方式索引检查，并输出纯搜索耗时。`publish` 生成自带运行时的 Windows x64 目录。
+
+编译缓存、发布目录、日志与本机配置由 `.gitignore` 排除。图标源文件与生成方法见 [图标说明](src/Glint.App/Assets/README.md)。
+
+当前为自用原型。已完成应用索引、中文/拼音搜索、固定与别名、自动刷新、键盘启动、托盘、手动补充应用和开机启动开关。窗口会按目标屏幕缩放和可用区域限制大小。尚未完成不同中文输入法、多屏混合缩放的真实设备、开机登录与完整商店应用启动覆盖测试；拼音采用单字读音，多音字可通过自定义别名补充。部分商店应用先以文字首字显示图标。
+
+产品范围见 [项目说明](docs/project-brief.md)，验证覆盖与后续工作见 [开发状态](docs/development-status.md)。
+
+## 第三方依赖
+
+拼音依赖 [TinyPinyin](https://github.com/hstarorg/TinyPinyin.Net)，使用 MIT 许可证，授权文本见 `THIRD-PARTY-NOTICES.md`。发布目录包含 .NET 运行时附带的许可证和第三方声明。

@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Glint.App/Glint.App.csproj" />
+    <Project Path="src/Glint.Core/Glint.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Glint.Checks/Glint.Checks.csproj" />
+  </Folder>
+</Solution>
