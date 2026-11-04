@@ -29,6 +29,12 @@ try {
         --output $stage -p:DebugType=None -p:DebugSymbols=false
     if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
 
+    foreach ($notice in @('LICENSE', 'THIRD-PARTY-NOTICES.md', 'README.md')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $stage $notice) -PathType Leaf)) {
+            throw "Required license or notice missing from release: $notice"
+        }
+    }
+
     $runtimeConfig = Get-Content -Raw -LiteralPath (Join-Path $stage 'Glint.runtimeconfig.json') | ConvertFrom-Json
     $packageRoot = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES } else { Join-Path $env:USERPROFILE '.nuget/packages' }
     foreach ($framework in $runtimeConfig.runtimeOptions.includedFrameworks) {
