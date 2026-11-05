@@ -1,5 +1,15 @@
 # Third-party notices
 
+## Windows SDK for .NET and C#/WinRT
+
+The PDF preview uses Windows Runtime projections distributed with Microsoft.Windows.SDK.NET.Ref 10.0.19041.57, including Microsoft.Windows.SDK.NET.dll and WinRT.Runtime.dll.
+
+Copyright (c) Microsoft Corporation.
+
+Windows SDK license: https://aka.ms/WinSDKLicenseURL — a copy is included in `licenses/WindowsSDK/sdk_license.rtf`.
+
+C#/WinRT source and MIT license: https://github.com/microsoft/CsWinRT — the full license is included in `licenses/CsWinRT/LICENSE.txt`.
+
 ## TinyPinyin 1.1.0
 
 Source: https://github.com/hstarorg/TinyPinyin.Net

@@ -1,3 +1,2 @@
-* text=auto
-*.png binary
-*.ico binary
+# Preserve the upstream Windows SDK license byte for byte.
+licenses/WindowsSDK/*.rtf binary

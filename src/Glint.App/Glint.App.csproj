@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>disable</ImplicitUsings>
@@ -10,15 +10,17 @@
     <!-- WPF owns startup and DPI; WinForms is used only for the tray and screen information. -->
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
     <AssemblyName>Glint</AssemblyName>
-    <Version>0.1.1</Version>
+    <Version>0.2.0</Version>
     <RootNamespace>Glint.App</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Glint.Checks" />
     <Resource Include="Assets\glint.ico" />
     <Resource Include="Assets\glint.png" />
     <ProjectReference Include="..\Glint.Core\Glint.Core.csproj" />
     <Content Include="..\..\LICENSE" Link="LICENSE" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\README.md" Link="README.md" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\..\licenses\**\*" Link="licenses\%(RecursiveDir)%(Filename)%(Extension)" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

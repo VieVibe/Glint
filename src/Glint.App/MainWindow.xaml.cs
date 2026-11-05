@@ -26,6 +26,7 @@ public partial class MainWindow : Window
     private CatalogMonitor? catalogMonitor;
     private bool resultMenuOpen;
     private HotkeyService? hotkey;
+    private QuickPreviewService? quickPreview;
     private Forms.NotifyIcon? tray;
     private System.Drawing.Icon? trayIcon;
     private bool refreshing;
@@ -45,7 +46,7 @@ public partial class MainWindow : Window
         TextCompositionManager.AddPreviewTextInputHandler(SearchBox, (_, _) =>
             Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, () => composing = false));
         Closing += OnClosing;
-        Closed += (_, _) => { catalogMonitor?.Dispose(); hotkey?.Dispose(); tray?.Dispose(); trayIcon?.Dispose(); };
+        Closed += (_, _) => { quickPreview?.Dispose(); catalogMonitor?.Dispose(); hotkey?.Dispose(); tray?.Dispose(); trayIcon?.Dispose(); };
     }
 
     public void InitializeLauncher(bool background)
@@ -68,6 +69,8 @@ public partial class MainWindow : Window
         if (!registered) ShowNotice($"{settings.Hotkey} 已被占用。请在设置中切换快捷键，或从托盘打开轻启。");
         HotkeyLabel.Text = registered ? settings.Hotkey + " 唤出" : "快捷键被占用";
         CreateTray();
+        try { quickPreview = new QuickPreviewService(Dispatcher) { Enabled = settings.SpacePreviewEnabled }; }
+        catch (Win32Exception exception) { ShowNotice("无法启用 Space 文件预览：" + exception.Message); }
         catalogMonitor = new CatalogMonitor();
         catalogMonitor.Changed += () =>
         {
@@ -90,6 +93,10 @@ public partial class MainWindow : Window
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("打开轻启", null, (_, _) => Dispatcher.Invoke(ShowLauncher));
         menu.Items.Add("刷新应用列表", null, (_, _) => Dispatcher.Invoke(() => { _ = RefreshIndexAsync(); }));
+        var previewItem = new Forms.ToolStripMenuItem("Space 快速预览文件") { CheckOnClick = true, Checked = settings.SpacePreviewEnabled };
+        previewItem.Click += (_, _) => Dispatcher.Invoke(() => SetSpacePreview(previewItem.Checked));
+        menu.Opening += (_, _) => previewItem.Checked = settings.SpacePreviewEnabled;
+        menu.Items.Add(previewItem);
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("作者 GitHub · VieVibe", null, (_, _) => Dispatcher.Invoke(() => OpenGitHub("https://github.com/VieVibe")));
         menu.Items.Add("项目主页与反馈", null, (_, _) => Dispatcher.Invoke(() => OpenGitHub("https://github.com/VieVibe/Glint")));
@@ -108,6 +115,7 @@ public partial class MainWindow : Window
     public void ShowLauncher()
     {
         if (exiting || dialogOpen) return;
+        quickPreview?.ClosePreview();
         composing = false;
         SearchBox.Clear();
         UpdateResults();
@@ -253,12 +261,16 @@ public partial class MainWindow : Window
 
     private void OnDeactivated(object? sender, EventArgs e)
     {
-        if (!interaction && !composing && !dialogOpen && !resultMenuOpen) Hide();
+        if (!exiting && !interaction && !composing && !dialogOpen && !resultMenuOpen) Hide();
     }
 
     private void OnHeaderDrag(object sender, MouseButtonEventArgs e)
     {
-        if (e.OriginalSource is TextBlock or Border or Grid && e.LeftButton == MouseButtonState.Pressed) DragMove();
+        if (e.OriginalSource is TextBlock or Border or Grid && e.LeftButton == MouseButtonState.Pressed)
+        {
+            try { DragMove(); }
+            catch (InvalidOperationException) when (Mouse.LeftButton != MouseButtonState.Pressed) { }
+        }
     }
 
     private void OnClearClick(object sender, RoutedEventArgs e) { SearchBox.Clear(); SearchBox.Focus(); }
@@ -324,6 +336,7 @@ public partial class MainWindow : Window
         interaction = true;
         AltSpaceMenu.IsChecked = settings.Hotkey == "Alt+Space";
         CtrlAltSpaceMenu.IsChecked = settings.Hotkey == "Ctrl+Alt+Space";
+        SpacePreviewMenu.IsChecked = settings.SpacePreviewEnabled;
         try { StartupMenu.IsChecked = StartupService.IsEnabled(); }
         catch (Exception exception) when (exception is UnauthorizedAccessException or System.Security.SecurityException)
         { ShowNotice("无法读取开机启动设置。"); }
@@ -383,6 +396,19 @@ public partial class MainWindow : Window
 
     private void OnAltSpaceClick(object sender, RoutedEventArgs e) => ChangeHotkey("Alt+Space");
     private void OnCtrlAltSpaceClick(object sender, RoutedEventArgs e) => ChangeHotkey("Ctrl+Alt+Space");
+    private void OnSpacePreviewClick(object sender, RoutedEventArgs e) => SetSpacePreview(SpacePreviewMenu.IsChecked);
+    private void SetSpacePreview(bool enabled)
+    {
+        if (enabled && quickPreview is null)
+        {
+            try { quickPreview = new QuickPreviewService(Dispatcher); }
+            catch (Win32Exception exception)
+            { SpacePreviewMenu.IsChecked = false; ShowNotice("无法启用 Space 文件预览：" + exception.Message); return; }
+        }
+        settings.SpacePreviewEnabled = enabled;
+        if (quickPreview is not null) quickPreview.Enabled = enabled;
+        SaveSettings();
+    }
     private void OnStartupClick(object sender, RoutedEventArgs e)
     {
         try { StartupService.SetEnabled(StartupMenu.IsChecked); }
@@ -401,7 +427,7 @@ public partial class MainWindow : Window
     private void OnClosing(object? sender, CancelEventArgs e) { if (!exiting) { e.Cancel = true; Hide(); } }
     private void OnExitClick(object sender, RoutedEventArgs e) => ExitLauncher();
     public void RequestExit() => ExitLauncher();
-    private void ExitLauncher() { exiting = true; Close(); Application.Current.Shutdown(); }
+    private void ExitLauncher() { if (exiting) return; exiting = true; Close(); Application.Current.Shutdown(); }
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

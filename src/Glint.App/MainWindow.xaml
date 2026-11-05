@@ -57,6 +57,7 @@
                                     <MenuItem x:Name="AltSpaceMenu" Header="Alt+Space" IsCheckable="True" Click="OnAltSpaceClick" />
                                     <MenuItem x:Name="CtrlAltSpaceMenu" Header="Ctrl+Alt+Space" IsCheckable="True" Click="OnCtrlAltSpaceClick" />
                                 </MenuItem>
+                                <MenuItem x:Name="SpacePreviewMenu" Header="Space 快速预览文件" IsCheckable="True" Click="OnSpacePreviewClick" ToolTip="在资源管理器或桌面选中文件，按空格预览，再按空格关闭" />
                                 <MenuItem x:Name="StartupMenu" Header="开机启动" IsCheckable="True" Click="OnStartupClick" />
                                 <Separator />
                                 <MenuItem Header="作者 GitHub · VieVibe" Click="OnAuthorGitHubClick" ToolTip="https://github.com/VieVibe" />

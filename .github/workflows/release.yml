@@ -6,7 +6,7 @@ on:
       tag:
         description: Existing version tag with a prepared draft release
         required: true
-        default: v0.1.1
+        default: v0.2.0
 
 permissions:
   contents: write
@@ -50,13 +50,13 @@ jobs:
           # The full checks run on a Chinese Windows desktop before tagging.
           # WScript.Shell cannot create the harness's Chinese shortcut fixture on this English runner.
           $exe = Join-Path "artifacts/releases/$($env:RELEASE_TAG.Substring(1))/Glint-win-x64" 'Glint.exe'
-          $process = Start-Process -FilePath $exe -ArgumentList '--background' -PassThru
+          $process = Start-Process -FilePath $exe -ArgumentList '--background' -PassThru -WindowStyle Hidden
           try {
             Start-Sleep -Seconds 3
             $process.Refresh()
             if ($process.HasExited) { throw 'Portable application exited during startup.' }
           } finally {
-            Start-Process -FilePath $exe -ArgumentList '--exit' -Wait
+            Start-Process -FilePath $exe -ArgumentList '--exit' -Wait -WindowStyle Hidden
             if (-not $process.WaitForExit(10000)) { throw 'Portable application did not exit cleanly.' }
           }
           if ($process.ExitCode -ne 0) { throw 'Portable application returned an error.' }

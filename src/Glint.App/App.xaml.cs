@@ -1,4 +1,5 @@
 using System.Windows;
+using Glint.App.Services;
 
 namespace Glint.App;
 
@@ -14,6 +15,7 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        DispatcherUnhandledException += (_, args) => AppDiagnostics.Log("Unhandled UI exception", args.Exception);
         if (e.Args.Contains("--exit"))
         {
             if (EventWaitHandle.TryOpenExisting(@"Local\Glint.Launcher.Exit", out var signal))

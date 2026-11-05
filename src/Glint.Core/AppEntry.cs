@@ -8,6 +8,7 @@ public sealed record UsageInfo(int Count, DateTimeOffset LastUsed);
 public sealed class UserSettings
 {
     public string Hotkey { get; set; } = "Alt+Space";
+    public bool SpacePreviewEnabled { get; set; } = true;
     public List<string> PortableApps { get; set; } = [];
     public Dictionary<string, UsageInfo> Usage { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public HashSet<string> PinnedApps { get; set; } = new(StringComparer.OrdinalIgnoreCase);

@@ -36,6 +36,11 @@ try {
     }
 
     $runtimeConfig = Get-Content -Raw -LiteralPath (Join-Path $stage 'Glint.runtimeconfig.json') | ConvertFrom-Json
+    foreach ($notice in @('licenses/WindowsSDK/sdk_license.rtf', 'licenses/CsWinRT/LICENSE.txt')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $stage $notice) -PathType Leaf)) {
+            throw "Required Windows Runtime notice missing from release: $notice"
+        }
+    }
     $packageRoot = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES } else { Join-Path $env:USERPROFILE '.nuget/packages' }
     foreach ($framework in $runtimeConfig.runtimeOptions.includedFrameworks) {
         $pack = Join-Path (Join-Path $packageRoot ($framework.name.ToLowerInvariant() + '.runtime.win-x64')) $framework.version

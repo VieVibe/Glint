@@ -10,14 +10,20 @@ public sealed class SettingsStore(string directory)
     public UserSettings Load()
     {
         if (!File.Exists(FilePath)) return new();
+        if (new FileInfo(FilePath).Length > 4_000_000) throw new InvalidDataException("设置文件过大。");
         var settings = JsonSerializer.Deserialize<UserSettings>(File.ReadAllText(FilePath), Options)
             ?? throw new InvalidDataException("设置文件内容为空。");
-        settings.PortableApps ??= [];
-        settings.Usage = new(settings.Usage ?? [], StringComparer.OrdinalIgnoreCase);
+        settings.PortableApps = (settings.PortableApps ?? []).Where(path => !string.IsNullOrWhiteSpace(path)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var usage = new Dictionary<string, UsageInfo>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in settings.Usage ?? [])
+            if (pair.Value is not null) usage[pair.Key] = pair.Value with { Count = Math.Clamp(pair.Value.Count, 0, 1_000_000) };
+        settings.Usage = usage;
         settings.PinnedApps = new(settings.PinnedApps ?? [], StringComparer.OrdinalIgnoreCase);
-        settings.Aliases = new(settings.Aliases ?? [], StringComparer.OrdinalIgnoreCase);
-        foreach (var id in settings.Aliases.Keys.ToArray())
-            settings.Aliases[id] = (settings.Aliases[id] ?? []).Where(alias => !string.IsNullOrWhiteSpace(alias)).ToArray();
+        var aliases = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in settings.Aliases ?? [])
+            aliases[pair.Key] = (pair.Value ?? []).Where(alias => !string.IsNullOrWhiteSpace(alias))
+                .Select(alias => alias.Length > 40 ? alias[..40] : alias).Distinct(StringComparer.OrdinalIgnoreCase).Take(12).ToArray();
+        settings.Aliases = aliases;
         if (settings.Hotkey is not ("Alt+Space" or "Ctrl+Alt+Space")) settings.Hotkey = "Alt+Space";
         return settings;
     }

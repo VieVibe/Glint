@@ -92,8 +92,12 @@ public sealed class SearchEngine
         return false;
     }
 
-    public static string Normalize(string value) => string.Concat(value.Normalize(NormalizationForm.FormKC)
-        .Where(char.IsLetterOrDigit)).ToLowerInvariant();
+    public static string Normalize(string value)
+    {
+        try { value = value.Normalize(NormalizationForm.FormKC); }
+        catch (ArgumentException) { /* Ignore isolated surrogate characters from incomplete or damaged input. */ }
+        return string.Concat(value.Where(char.IsLetterOrDigit)).ToLowerInvariant();
+    }
 
     private static IEnumerable<string> GetKeys(string value)
     {

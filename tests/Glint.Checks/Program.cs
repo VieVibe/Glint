@@ -10,8 +10,10 @@ internal static class Program
     private static int passed;
 
     [STAThread]
-    public static async Task Main()
+    public static async Task Main(string[] args)
     {
+        if (args.Contains("--inspect-preview")) { await PreviewChecks.InspectExplorerAsync(); return; }
+        PreviewWindowChecks.Run(Check, args.Contains("--stress") ? 1000 : 100);
         var apps = new[]
         {
             new AppEntry("wechat", "微信", "wechat.exe", "test"),
@@ -29,6 +31,7 @@ internal static class Program
         Check(engine.Search("VS Code", usage).First().Id == "code", "英文别名与空格");
         Check(engine.Search("浏览器", usage).First().Id == "chrome", "类别别名");
         Check(engine.Search("unmatched_xyz", usage).Count == 0, "无匹配时为空");
+        Check(SearchEngine.Normalize("wx\ud800") == "wx", "不完整 Unicode 输入不会导致搜索崩溃");
         usage["codehelper"] = new(10000, DateTimeOffset.UtcNow);
         Check(engine.Search("vscode", usage).First().Id == "code", "使用次数不会越过匹配相关性");
         Check(engine.Search("", usage).First().Id == "codehelper", "空查询按使用次数排序");
@@ -77,7 +80,8 @@ internal static class Program
         {
             var store = new SettingsStore(directory);
             Check(store.Load().Hotkey == "Alt+Space", "默认设置");
-            var settings = new UserSettings { Hotkey = "Ctrl+Alt+Space", PortableApps = [Path.Combine(directory, "便携工具", "demo.exe")], Usage = usage,
+            Check(store.Load().SpacePreviewEnabled, "Space 预览默认启用");
+            var settings = new UserSettings { Hotkey = "Ctrl+Alt+Space", SpacePreviewEnabled = false, PortableApps = [Path.Combine(directory, "便携工具", "demo.exe")], Usage = usage,
                 PinnedApps = new(StringComparer.OrdinalIgnoreCase) { "WECHAT" }, Aliases = aliases };
             store.Save(settings);
             var loaded = store.Load();
@@ -86,13 +90,20 @@ internal static class Program
             store.Save(loaded);
             Check(!File.Exists(store.FilePath + ".tmp"), "原子保存清理临时文件");
             Check(loaded.PinnedApps.Contains("wechat") && loaded.Aliases["CODE"].Contains("写代码"), "固定和别名兼容大小写并持久化");
+            Check(!loaded.SpacePreviewEnabled, "Space 预览开关持久化");
             File.WriteAllText(store.FilePath, "{\"Hotkey\":\"Alt+Space\",\"Usage\":{}}");
             var legacy = store.Load();
             Check(legacy.PinnedApps.Count == 0 && legacy.Aliases.Count == 0, "兼容旧版设置无需重置");
+            Check(legacy.SpacePreviewEnabled, "旧设置自动启用 Space 预览");
+            File.WriteAllText(store.FilePath, "{\"PortableApps\":[null,\"\",\"demo.exe\",\"DEMO.EXE\"],\"Usage\":{\"code\":{\"Count\":-1},\"CODE\":{\"Count\":2147483647}},\"Aliases\":{\"code\":[null,\"\"],\"CODE\":[\"编辑\"]}}");
+            var repaired = store.Load();
+            Check(repaired.PortableApps.Count == 1 && repaired.Usage["code"].Count == 1_000_000 && repaired.Aliases["code"].Single() == "编辑", "异常设置中的空路径、重复大小写与计数不会导致启动崩溃");
             File.WriteAllText(store.FilePath, "{broken");
             var rejectedCorruption = false;
             try { store.Load(); } catch (JsonException) { rejectedCorruption = true; }
             Check(rejectedCorruption, "损坏设置可检测");
+
+            await PreviewChecks.RunAsync(directory, Check);
 
             var executable = Path.Combine(Environment.SystemDirectory, "notepad.exe");
             var shortcutPath = Path.Combine(directory, "Glint 索引验证.lnk");
