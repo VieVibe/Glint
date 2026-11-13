@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -11,6 +12,9 @@ using System.Windows.Threading;
 using Glint.App;
 using Glint.App.Services;
 using Glint.Core;
+using ICSharpCode.AvalonEdit;
+using ICSharpCode.AvalonEdit.Document;
+using ICSharpCode.AvalonEdit.Highlighting;
 
 internal static class PreviewWindowChecks
 {
@@ -71,10 +75,56 @@ internal static class PreviewWindowChecks
             WritePdf(pdf);
             var text = Path.Combine(directory, "文字.txt");
             File.WriteAllText(text, "中文预览稳定性检查");
+            var code = Path.Combine(directory, "project.csproj");
+            File.WriteAllText(code, "<Project>\n    <PropertyGroup />\n</Project>");
+            var codeWindow = Create(code);
+            Pump(codeWindow.LoadPreviewAsync());
+            var editor = (TextEditor)codeWindow.FindName("DocumentText");
+            check(editor is { ShowLineNumbers: true, SyntaxHighlighting: not null, WordWrap: false, IsReadOnly: true }
+                && editor.Document.LineCount == 3 && !editor.Options.EnableHyperlinks,
+                "项目文件在只读源码视图中显示行号、高亮和原始行宽");
+            ((System.Windows.Controls.Primitives.ToggleButton)codeWindow.FindName("WrapButton")).IsChecked = true;
+            check(editor.WordWrap, "换行开关更新源码视图");
+            var fontSize = editor.FontSize;
+            Wheel(codeWindow, editor, 120);
+            check(editor.FontSize > fontSize && editor.IsReadOnly, "直接滚轮放大源码字号");
+            Wheel(codeWindow, editor, -120);
+            check(editor.FontSize == fontSize, "反向滚轮恢复源码字号");
+            Wheel(codeWindow, editor, 3600);
+            check(editor.FontSize == 3 * fontSize && !((Button)codeWindow.FindName("ZoomIn")).IsEnabled, "滚轮放大限制在 300%");
+            Wheel(codeWindow, editor, -3600);
+            check(editor.FontSize == fontSize / 2 && !((Button)codeWindow.FindName("ZoomOut")).IsEnabled, "滚轮缩小限制在 50%");
+            codeWindow.RequestClose();
+            Pump(codeWindow.Completion);
+
+            foreach (var (name, source, language) in new[] { ("main.go", "package main", "Go"),
+                ("lib.rs", "/* nested /* comment */ end */ fn main() {}", "Rust"),
+                (".env.production.local", "APP_ENV=production", "Config"), ("config.yml", "enabled: true", "Config"),
+                ("Dockerfile", "from scratch", "Dockerfile") })
+            {
+                var syntax = PreviewSyntax.GetDefinition(name, FilePreview.IsEnvironmentFile(name));
+                using var highlighter = new DocumentHighlighter(new TextDocument(source), syntax!);
+                check(syntax?.Name == language && highlighter.HighlightLine(1).Sections.Count > 0, $"{name} 实际产生语法高亮");
+            }
             var window = Create(pdf);
             Pump(window.LoadPreviewAsync());
             check(((Image)window.FindName("PreviewImage")).Source is BitmapSource { PixelWidth: > 0, PixelHeight: > 0 }
                 && ((TextBlock)window.FindName("PageLabel")).Text == "1 / 1", "PDF 使用系统渲染器实际加载页面");
+            var content = (FrameworkElement)window.Content;
+            var size = new Size(960, 720);
+            content.Measure(size);
+            content.Arrange(new Rect(size));
+            content.UpdateLayout();
+            var page = (Image)window.FindName("PreviewImage");
+            var pageHeight = page.ActualHeight;
+            Wheel(window, page, 480);
+            content.UpdateLayout();
+            check(pageHeight > 0 && page.ActualHeight > pageHeight
+                && window.FindName("VisualScroll") is ScrollViewer { ScrollableHeight: > 0 }, "PDF 放大后可滚动查看超出窗口的部分");
+            ((Button)window.FindName("ResetZoom")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            content.UpdateLayout();
+            check(Math.Abs(page.ActualHeight - pageHeight) < 1
+                && ((ScrollViewer)window.FindName("VisualScroll")).ScrollableHeight < 1, "点击缩放比例恢复 PDF 适应窗口");
             window.RequestClose();
             Pump(window.Completion);
             using (new FileStream(pdf, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) { }
@@ -94,7 +144,7 @@ internal static class PreviewWindowChecks
 
             void Cycle(int index)
             {
-                var path = new[] { image, pdf, text }[index % 3];
+                var path = new[] { image, pdf, text, code }[index % 4];
                 var preview = Create(path);
                 Pump(preview.LoadPreviewAsync());
                 preview.RequestClose();
@@ -102,7 +152,7 @@ internal static class PreviewWindowChecks
                 Pump(preview.Completion);
                 using var unlocked = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
             }
-            for (var index = 0; index < 6; index++) Cycle(index);
+            for (var index = 0; index < 8; index++) Cycle(index);
             Collect();
             using var process = Process.GetCurrentProcess();
             process.Refresh();
@@ -115,8 +165,8 @@ internal static class PreviewWindowChecks
             process.Refresh();
             var handleGrowth = process.HandleCount - handles;
             var memoryGrowth = GC.GetTotalMemory(true) - memory;
-            check(handleGrowth < 80 && memoryGrowth < 20_000_000, $"连续 {stressCycles} 次图片、PDF、文字预览无崩溃、文件占用或持续资源增长");
             Console.WriteLine($"预览压力检查：{stressCycles} 次 / {watch.Elapsed.TotalSeconds:F2} s；句柄变化 {handleGrowth}；托管内存变化 {memoryGrowth / 1024d:F0} KB");
+            check(handleGrowth < 80 && memoryGrowth < 20_000_000, $"连续 {stressCycles} 次图片、PDF、文字和源码预览无崩溃、文件占用或持续资源增长");
         }
         finally { Directory.Delete(directory, recursive: true); }
     }
@@ -127,6 +177,10 @@ internal static class PreviewWindowChecks
         new WindowInteropHelper(preview).EnsureHandle();
         return preview;
     }
+
+    private static void Wheel(PreviewWindow window, UIElement source, int delta) =>
+        window.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, delta)
+        { RoutedEvent = Mouse.PreviewMouseWheelEvent, Source = source });
 
     private static void Pump(Task task)
     {

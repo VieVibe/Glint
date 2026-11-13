@@ -18,20 +18,51 @@ public static class FilePreview
     private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
         { ".mp4", ".m4v", ".mov", ".wmv", ".avi", ".mkv", ".webm", ".mpg", ".mpeg" };
     private static readonly HashSet<string> TextExtensions = new(StringComparer.OrdinalIgnoreCase)
-        { ".txt", ".md", ".markdown", ".csv", ".tsv", ".log", ".json", ".xml", ".yaml", ".yml", ".ini", ".cfg", ".conf",
-          ".cs", ".js", ".ts", ".tsx", ".jsx", ".html", ".htm", ".css", ".py", ".ps1", ".bat", ".cmd", ".sql", ".sh", ".toml" };
+    {
+        ".txt", ".md", ".markdown", ".rst", ".adoc", ".csv", ".tsv", ".log",
+        ".cs", ".fs", ".fsx", ".fsi", ".vb", ".c", ".h", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx", ".inl",
+        ".go", ".rs", ".java", ".kt", ".kts", ".scala", ".swift", ".dart", ".lua", ".rb", ".php", ".py", ".pyi", ".pyw", ".r",
+        ".js", ".mjs", ".cjs", ".jsx", ".ts", ".mts", ".cts", ".tsx", ".vue", ".svelte", ".astro",
+        ".html", ".htm", ".css", ".scss", ".sass", ".less", ".svg", ".razor", ".cshtml",
+        ".ps1", ".psm1", ".psd1", ".bat", ".cmd", ".sh", ".bash", ".zsh", ".fish", ".sql", ".graphql", ".gql", ".proto",
+        ".json", ".jsonc", ".json5", ".jsonl", ".ndjson", ".xml", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".properties",
+        ".editorconfig", ".env", ".config", ".manifest", ".xaml", ".axaml", ".xsd", ".xsl", ".xslt", ".plist", ".resx",
+        ".sln", ".slnx", ".csproj", ".fsproj", ".vbproj", ".vcxproj", ".proj", ".props", ".targets", ".nuspec",
+        ".cmake", ".mk", ".gradle", ".groovy", ".dockerfile", ".tf", ".tfvars", ".hcl", ".diff", ".patch", ".gitignore", ".gitattributes"
+    };
+    private static readonly HashSet<string> TextFileNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Dockerfile", "Containerfile", "Makefile", "GNUmakefile", "CMakeLists.txt", "Jenkinsfile", "Vagrantfile",
+        "Gemfile", "Rakefile", "Brewfile", "Podfile", "Pipfile", "Pipfile.lock", "Cargo.lock", "yarn.lock", "poetry.lock", "uv.lock",
+        "composer.lock", "go.mod", "go.sum", "go.work", "gradle.lockfile", "Package.resolved", "flake.lock",
+        ".dockerignore", ".npmignore", ".npmrc", ".yarnrc", ".gitmodules", ".gitconfig", ".hgignore", ".prettierignore", ".eslintignore",
+        "LICENSE", "LICENCE", "README", "CHANGELOG", "COPYING", "NOTICE"
+    };
+    private static readonly HashSet<string> EnvironmentFileNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".env", ".env.dev", ".env.development", ".env.test", ".env.testing", ".env.prod", ".env.production", ".env.staging",
+        ".env.preview", ".env.ci", ".env.qa", ".env.uat", ".env.example", ".env.sample", ".env.template", ".env.dist", ".env.defaults"
+    };
 
     public static FilePreviewKind GetKind(string path)
     {
         var extension = Path.GetExtension(path);
         if (ImageExtensions.Contains(extension)) return FilePreviewKind.Image;
         if (VideoExtensions.Contains(extension)) return FilePreviewKind.Video;
-        if (TextExtensions.Contains(extension)) return FilePreviewKind.Text;
+        if (TextExtensions.Contains(extension) || TextFileNames.Contains(Path.GetFileName(path)) || IsEnvironmentFile(path))
+            return FilePreviewKind.Text;
         if (extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase)) return FilePreviewKind.Pdf;
         if (extension.Equals(".docx", StringComparison.OrdinalIgnoreCase)
             || extension.Equals(".xlsx", StringComparison.OrdinalIgnoreCase)
             || extension.Equals(".pptx", StringComparison.OrdinalIgnoreCase)) return FilePreviewKind.Office;
         return FilePreviewKind.Unsupported;
+    }
+
+    public static bool IsEnvironmentFile(string path)
+    {
+        var name = Path.GetFileName(path);
+        if (name.EndsWith(".local", StringComparison.OrdinalIgnoreCase)) name = name[..^6];
+        return EnvironmentFileNames.Contains(name);
     }
 
     public static async Task<DocumentPreview> ReadDocumentAsync(string path, CancellationToken cancellationToken = default)

@@ -1,0 +1,19 @@
+<SyntaxDefinition name="Rust" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+    <Color name="Comment" foreground="#64756D" />
+    <Color name="String" foreground="#A13A39" />
+    <Color name="Keyword" foreground="#6C4484" />
+    <Color name="Macro" foreground="#215E83" />
+    <RuleSet name="BlockComment">
+        <Span color="Comment" begin="/\*" end="\*/" multiline="true" ruleSet="BlockComment" />
+    </RuleSet>
+    <RuleSet>
+        <Span color="Comment" begin="//" />
+        <Import ruleSet="BlockComment" />
+        <Span color="String" begin="&quot;" end="&quot;" multiline="true">
+            <RuleSet><Rule>\\.</Rule></RuleSet>
+        </Span>
+        <Rule color="String">'(?:[^'\\\r\n]|\\(?:x[0-9A-Fa-f]{2}|u\{[\dA-Fa-f_]+\}|.))'</Rule>
+        <Rule color="Macro">\b\w+!(?=\s*[[{(])</Rule>
+        <Rule color="Keyword">\b(?:as|async|await|break|const|continue|crate|dyn|else|enum|extern|false|fn|for|if|impl|in|let|loop|match|mod|move|mut|pub|ref|return|self|Self|static|struct|super|trait|true|type|unsafe|use|where|while)\b</Rule>
+    </RuleSet>
+</SyntaxDefinition>

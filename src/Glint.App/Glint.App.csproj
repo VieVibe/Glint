@@ -10,13 +10,15 @@
     <!-- WPF owns startup and DPI; WinForms is used only for the tray and screen information. -->
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
     <AssemblyName>Glint</AssemblyName>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <RootNamespace>Glint.App</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Glint.Checks" />
     <Resource Include="Assets\glint.ico" />
     <Resource Include="Assets\glint.png" />
+    <EmbeddedResource Include="Assets\Preview*.xshd" />
+    <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
     <ProjectReference Include="..\Glint.Core\Glint.Core.csproj" />
     <Content Include="..\..\LICENSE" Link="LICENSE" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md" CopyToPublishDirectory="PreserveNewest" />

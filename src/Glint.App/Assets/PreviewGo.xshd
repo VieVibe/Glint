@@ -1,0 +1,17 @@
+<SyntaxDefinition name="Go" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+    <Color name="Comment" foreground="#64756D" />
+    <Color name="String" foreground="#A13A39" />
+    <Color name="Keyword" foreground="#6C4484" />
+    <Color name="Builtin" foreground="#215E83" />
+    <RuleSet>
+        <Span color="Comment" begin="//" />
+        <Span color="Comment" begin="/\*" end="\*/" multiline="true" />
+        <Span color="String" begin="`" end="`" multiline="true" />
+        <Span color="String" begin="&quot;" end="&quot;">
+            <RuleSet><Rule>\\.</Rule></RuleSet>
+        </Span>
+        <Rule color="String">'(?:[^'\\]|\\.)+'</Rule>
+        <Rule color="Keyword">\b(?:break|case|chan|const|continue|default|defer|else|fallthrough|for|func|go|goto|if|import|interface|map|package|range|return|select|struct|switch|type|var)\b</Rule>
+        <Rule color="Builtin">\b(?:any|bool|byte|comparable|complex(?:64|128)|error|float(?:32|64)|int(?:8|16|32|64)?|rune|string|uint(?:8|16|32|64|ptr)?|true|false|nil|iota)\b</Rule>
+    </RuleSet>
+</SyntaxDefinition>

@@ -17,14 +17,17 @@ namespace Glint.App;
 
 public partial class PreviewWindow : Window
 {
+    private const double MinZoom = 50, DefaultZoom = 100, MaxZoom = 300, ZoomStep = 10;
     private static readonly SemaphoreSlim LoadSlots = new(2);
     private readonly string path;
+    private readonly double defaultFontSize;
     private readonly CancellationTokenSource lifetime = new();
     private readonly DispatcherTimer playbackTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private PdfDocument? pdf;
     private IRandomAccessStream? pdfInput;
     private Task? loading, rendering;
     private uint pageIndex;
+    private double zoom = DefaultZoom;
     private bool closing, closed, playing, seeking, updatingPosition, opening, activated;
     internal Task Completion { get; private set; } = Task.CompletedTask;
 
@@ -32,9 +35,18 @@ public partial class PreviewWindow : Window
     {
         this.path = path;
         InitializeComponent();
-        Title = Path.GetFileName(path) + " · 快速预览 · 轻启 Glint";
-        FileNameLabel.Text = Path.GetFileName(path);
+        defaultFontSize = DocumentText.FontSize;
+        var name = Path.GetFileName(path);
+        var extension = Path.GetExtension(name);
+        Title = name + " · 快速预览 · 轻启 Glint";
+        FileNameLabel.Text = name;
         FileNameLabel.ToolTip = path;
+        FileTypeLabel.Text = FilePreview.IsEnvironmentFile(path) ? "ENV"
+            : (extension.Length > 1 ? extension[1..] : name).ToUpperInvariant();
+        FileTypeLabel.ToolTip = FileTypeLabel.Text;
+        DocumentText.Options.EnableHyperlinks = false;
+        DocumentText.Options.EnableEmailHyperlinks = false;
+        DocumentText.TextArea.TextView.Margin = new Thickness(8, 0, 0, 0);
         playbackTimer.Tick += (_, _) => UpdatePlayback();
         Activated += (_, _) => activated = true;
     }
@@ -67,19 +79,18 @@ public partial class PreviewWindow : Window
             slot = true;
             var length = await Task.Run(() => new FileInfo(path).Length, lifetime.Token);
             if (closed) return;
-            DetailsLabel.Text = $"{Path.GetExtension(path).TrimStart('.').ToUpperInvariant()} · {FormatSize(length)}";
-            switch (FilePreview.GetKind(path))
+            DetailsLabel.Text = FormatSize(length);
+            var kind = FilePreview.GetKind(path);
+            switch (kind)
             {
                 case FilePreviewKind.Image:
                     var bitmap = await Task.Run(() => PreviewImageLoader.Load(path), lifetime.Token);
                     if (closed) return;
-                    PreviewImage.Source = bitmap;
-                    ImageScroll.Visibility = Visibility.Visible;
-                    MessagePanel.Visibility = Visibility.Collapsed;
+                    ShowImage(bitmap);
                     StatusLabel.Text = "图片预览";
                     break;
                 case FilePreviewKind.Video:
-                    Video.Visibility = Visibility.Visible;
+                    Video.Visibility = VisualSurface.Visibility = Visibility.Visible;
                     Video.Source = new Uri(path);
                     Video.Play();
                     playing = true;
@@ -98,14 +109,10 @@ public partial class PreviewWindow : Window
                 case FilePreviewKind.Office:
                     var document = await Task.Run(() => FilePreview.ReadDocumentAsync(path, lifetime.Token), lifetime.Token);
                     if (closed) return;
-                    DocumentText.Text = document.Text.Length == 0 ? "（文档没有可预览的文字）" : document.Text;
-                    DocumentText.Visibility = Visibility.Visible;
-                    MessagePanel.Visibility = Visibility.Collapsed;
-                    StatusLabel.Text = document.Format + (document.Truncated ? " · 内容较长，仅显示前 20 万字符" : "");
-                    StatusLabel.ToolTip = StatusLabel.Text;
+                    ShowDocument(document, kind);
                     break;
                 default:
-                    ShowMessage("此格式暂不支持预览", "可按 Enter，或点击“默认应用打开”查看此文件。");
+                    ShowMessage("此格式暂不支持预览", "按 Enter 或点击“打开”，可使用默认应用查看。");
                     break;
             }
         }
@@ -116,6 +123,131 @@ public partial class PreviewWindow : Window
             if (!closed) ShowMessage("无法预览此文件", exception.Message);
         }
         finally { if (slot) LoadSlots.Release(); }
+    }
+
+    private void ShowDocument(DocumentPreview document, FilePreviewKind kind)
+    {
+        if (document.Text.Length == 0)
+        {
+            ShowMessage("文件没有可预览的文字", "");
+            return;
+        }
+
+        var isText = kind == FilePreviewKind.Text;
+        var extension = Path.GetExtension(path).ToLowerInvariant();
+        var name = Path.GetFileName(path).ToLowerInvariant();
+        var prose = (extension == ".txt" && name != "cmakelists.txt") || extension is ".md" or ".markdown" or ".rst" or ".adoc"
+            || name is "readme" or "license" or "licence" or "copying" or "changelog" or "notice";
+        DocumentText.ShowLineNumbers = isText && !prose;
+        if (isText) DocumentText.SyntaxHighlighting = PreviewSyntax.GetDefinition(path, FilePreview.IsEnvironmentFile(path));
+        WrapButton.IsChecked = !isText || prose;
+        DocumentText.Text = document.Text;
+        DocumentSurface.Visibility = WrapButton.Visibility = Visibility.Visible;
+        ShowZoomControls();
+        MessagePanel.Visibility = Visibility.Collapsed;
+        if (IsActive && (Keyboard.FocusedElement is null || Keyboard.FocusedElement == this)) DocumentText.TextArea.Focus();
+        var shownLines = DocumentText.Document.LineCount;
+        StatusLabel.Text = (DocumentText.ShowLineNumbers ? $"{shownLines:N0} 行" : document.Format)
+            + (document.Truncated ? " · 仅显示前 20 万字符" : "");
+        StatusLabel.ToolTip = StatusLabel.Text;
+    }
+
+    private void ShowImage(BitmapSource bitmap)
+    {
+        PreviewImage.Source = bitmap;
+        VisualSurface.Visibility = Visibility.Visible;
+        UpdateVisualSize();
+        VisualScroll.ScrollToHome();
+        ShowZoomControls();
+        MessagePanel.Visibility = Visibility.Collapsed;
+    }
+
+    private void ShowZoomControls()
+    {
+        ZoomControls.Visibility = Visibility.Visible;
+        UpdateZoomControls();
+    }
+
+    private void UpdateZoomControls()
+    {
+        ResetZoom.Content = $"{zoom:0}%";
+        ZoomOut.IsEnabled = zoom > MinZoom;
+        ZoomIn.IsEnabled = zoom < MaxZoom;
+    }
+
+    private void OnVisualSizeChanged(object sender, SizeChangedEventArgs e) => UpdateVisualSize();
+
+    private void UpdateVisualSize()
+    {
+        var bitmap = PreviewImage.Source as BitmapSource;
+        var width = bitmap?.Width ?? Video.NaturalVideoWidth;
+        var height = bitmap?.Height ?? Video.NaturalVideoHeight;
+        if (width <= 0 || height <= 0 || VisualSurface.ActualWidth <= 0 || VisualSurface.ActualHeight <= 0) return;
+
+        var fit = Math.Min(VisualSurface.ActualWidth / width, VisualSurface.ActualHeight / height);
+        VisualContent.Width = width * fit * zoom / DefaultZoom;
+        VisualContent.Height = height * fit * zoom / DefaultZoom;
+    }
+
+    private void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (ZoomControls.Visibility != Visibility.Visible || e.Delta == 0) return;
+        var notches = e.Delta / 120d;
+        if (Keyboard.Modifiers == ModifierKeys.Shift)
+        {
+            if (DocumentSurface.Visibility == Visibility.Visible)
+                DocumentText.ScrollToVerticalOffset(DocumentText.VerticalOffset - notches * DocumentText.FontSize * 3);
+            else
+                VisualScroll.ScrollToVerticalOffset(VisualScroll.VerticalOffset - notches * 48);
+        }
+        else if (Keyboard.Modifiers == ModifierKeys.None)
+            SetZoom(zoom + notches * ZoomStep,
+                VisualSurface.Visibility == Visibility.Visible ? e.GetPosition(VisualScroll) : null);
+        else return;
+
+        e.Handled = true;
+    }
+
+    private void OnZoomOut(object sender, RoutedEventArgs e) => SetZoom(zoom - ZoomStep);
+    private void OnZoomIn(object sender, RoutedEventArgs e) => SetZoom(zoom + ZoomStep);
+    private void OnResetZoom(object sender, RoutedEventArgs e) => SetZoom(DefaultZoom);
+
+    private void SetZoom(double requestedZoom, Point? pointer = null)
+    {
+        var previousZoom = zoom;
+        zoom = Math.Clamp(Math.Round(requestedZoom), MinZoom, MaxZoom);
+        if (zoom == previousZoom) return;
+        UpdateZoomControls();
+
+        if (DocumentSurface.Visibility == Visibility.Visible)
+        {
+            var textView = DocumentText.TextArea.TextView;
+            var vertical = DocumentText.VerticalOffset;
+            var horizontal = DocumentText.HorizontalOffset;
+            var line = vertical > 0 ? textView.GetDocumentLineByVisualTop(vertical) : null;
+            var withinLine = line is null ? 0 : vertical - textView.GetVisualTopByDocumentLine(line.LineNumber);
+            DocumentText.FontSize = defaultFontSize * zoom / DefaultZoom;
+            if (line is not null)
+            {
+                DocumentText.UpdateLayout();
+                DocumentText.ScrollToVerticalOffset(textView.GetVisualTopByDocumentLine(line.LineNumber) + withinLine * zoom / previousZoom);
+            }
+            if (horizontal > 0) DocumentText.ScrollToHorizontalOffset(horizontal * zoom / previousZoom);
+        }
+        else
+        {
+            var viewport = new Rect(0, 0, VisualScroll.ViewportWidth, VisualScroll.ViewportHeight);
+            var anchor = pointer is { } position && viewport.Contains(position) ? position
+                : new Point(viewport.Width / 2, viewport.Height / 2);
+            var oldOrigin = VisualContent.TranslatePoint(new Point(), VisualScroll);
+            var relativeX = VisualContent.ActualWidth > 0 ? Math.Clamp((anchor.X - oldOrigin.X) / VisualContent.ActualWidth, 0, 1) : .5;
+            var relativeY = VisualContent.ActualHeight > 0 ? Math.Clamp((anchor.Y - oldOrigin.Y) / VisualContent.ActualHeight, 0, 1) : .5;
+            UpdateVisualSize();
+            VisualScroll.UpdateLayout();
+            var newAnchor = VisualContent.TranslatePoint(new Point(relativeX * VisualContent.ActualWidth, relativeY * VisualContent.ActualHeight), VisualScroll);
+            VisualScroll.ScrollToHorizontalOffset(VisualScroll.HorizontalOffset + newAnchor.X - anchor.X);
+            VisualScroll.ScrollToVerticalOffset(VisualScroll.VerticalOffset + newAnchor.Y - anchor.Y);
+        }
     }
 
     private async Task RenderPageAsync()
@@ -137,9 +269,7 @@ public partial class PreviewWindow : Window
             bitmap.StreamSource = input;
             bitmap.EndInit();
             bitmap.Freeze();
-            PreviewImage.Source = bitmap;
-            ImageScroll.Visibility = Visibility.Visible;
-            MessagePanel.Visibility = Visibility.Collapsed;
+            ShowImage(bitmap);
             PageLabel.Text = $"{pageIndex + 1} / {pdf.PageCount}";
             StatusLabel.Text = "PDF 预览 · ← → 翻页";
         }
@@ -168,6 +298,8 @@ public partial class PreviewWindow : Window
     {
         if (closed) return;
         MessagePanel.Visibility = Visibility.Collapsed;
+        UpdateVisualSize();
+        if (Video.NaturalVideoWidth > 0 && Video.NaturalVideoHeight > 0) ShowZoomControls();
         VideoControls.Visibility = Visibility.Visible;
         VideoPosition.Maximum = Video.NaturalDuration.HasTimeSpan ? Math.Max(1, Video.NaturalDuration.TimeSpan.TotalSeconds) : 1;
         VideoPosition.IsEnabled = Video.NaturalDuration.HasTimeSpan;
@@ -216,18 +348,34 @@ public partial class PreviewWindow : Window
 
     private void ShowMessage(string title, string hint)
     {
-        ImageScroll.Visibility = DocumentText.Visibility = Video.Visibility = PdfControls.Visibility = VideoControls.Visibility = Visibility.Collapsed;
+        VisualSurface.Visibility = DocumentSurface.Visibility = WrapButton.Visibility = Video.Visibility
+            = PdfControls.Visibility = VideoControls.Visibility = ZoomControls.Visibility = Visibility.Collapsed;
         MessagePanel.Visibility = Visibility.Visible;
         MessageTitle.Text = title;
         MessageHint.Text = hint;
+        MessageHint.Visibility = hint.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         StatusLabel.Text = "快速预览";
+        StatusLabel.ToolTip = null;
     }
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.W && WrapButton.Visibility == Visibility.Visible)
+        {
+            WrapButton.IsChecked = WrapButton.IsChecked != true;
+            e.Handled = true;
+            return;
+        }
         if (Keyboard.Modifiers != ModifierKeys.None) return;
         if (e.Key is Key.Space or Key.Escape) { e.Handled = true; RequestClose(); }
-        else if (e.Key == Key.Enter) { e.Handled = true; OpenFile(); }
+        else if (e.Key == Key.Enter)
+        {
+            if (ZoomControls.IsKeyboardFocusWithin) return;
+            e.Handled = true;
+            if (WrapButton.IsKeyboardFocused) WrapButton.IsChecked = WrapButton.IsChecked != true;
+            else if (CloseButton.IsKeyboardFocused) RequestClose();
+            else OpenFile();
+        }
         else if (pdf is not null && e.Key is Key.Left or Key.Right)
         { e.Handled = true; ChangePage(e.Key == Key.Left ? -1 : 1); }
     }

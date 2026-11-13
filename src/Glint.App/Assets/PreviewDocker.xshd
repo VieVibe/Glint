@@ -1,0 +1,8 @@
+<SyntaxDefinition name="Dockerfile" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+    <Color name="Comment" foreground="#64756D" />
+    <Color name="Instruction" foreground="#6C4484" />
+    <RuleSet ignoreCase="true">
+        <Span color="Comment" begin="^\s*\#" />
+        <Rule color="Instruction">^\s*(?:ADD|ARG|CMD|COPY|ENTRYPOINT|ENV|EXPOSE|FROM|HEALTHCHECK|LABEL|MAINTAINER|ONBUILD|RUN|SHELL|STOPSIGNAL|USER|VOLUME|WORKDIR)\b</Rule>
+    </RuleSet>
+</SyntaxDefinition>

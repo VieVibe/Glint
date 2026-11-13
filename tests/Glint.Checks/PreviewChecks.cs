@@ -33,6 +33,16 @@ internal static class PreviewChecks
             && FilePreview.GetKind("文档.PDF") == FilePreviewKind.Pdf && FilePreview.GetKind("代码.ts") == FilePreviewKind.Text, "预览格式识别、大小写与代码文件");
         check(FilePreview.GetKind("程序.exe") == FilePreviewKind.Unsupported && FilePreview.GetKind("旧文档.doc") == FilePreviewKind.Unsupported,
             "不支持的预览格式不会当作文字读取");
+        string[] developerFiles = ["main.GO", "lib.rs", "Main.java", "App.vue", "widget.svelte", "project.csproj",
+            "config.jsonc", "schema.proto", "fix.patch", "diagram.svg", "Dockerfile", "Makefile", "CMakeLists.txt",
+            ".gitignore", ".env.production.local", "Pipfile", "yarn.lock"];
+        check(developerFiles.All(file => FilePreview.GetKind(Path.Combine(directory, file)) == FilePreviewKind.Text),
+            "支持开发源码、配置、项目文件、补丁以及按名称识别的开发文件");
+        check(FilePreview.GetKind(".env.exe") == FilePreviewKind.Unsupported && FilePreview.GetKind("unknown.lock") == FilePreviewKind.Unsupported,
+            "名称规则不会误识别可执行文件或未知锁文件");
+        var dockerfile = Path.Combine(directory, "Dockerfile");
+        await File.WriteAllTextAsync(dockerfile, "FROM scratch\n# 中文注释\n");
+        check((await FilePreview.ReadDocumentAsync(dockerfile)).Text == "FROM scratch\n# 中文注释\n", "无扩展名的开发文件按原文预览");
         var path = Path.Combine(directory, "中文文字.txt");
         await File.WriteAllTextAsync(path, "空格预览\n第二行", Encoding.UTF8);
         var text = await FilePreview.ReadDocumentAsync(path);

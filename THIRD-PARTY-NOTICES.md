@@ -10,6 +10,10 @@ Windows SDK license: https://aka.ms/WinSDKLicenseURL — a copy is included in `
 
 C#/WinRT source and MIT license: https://github.com/microsoft/CsWinRT — the full license is included in `licenses/CsWinRT/LICENSE.txt`.
 
+## AvalonEdit 6.3.1.120
+
+The read-only text preview uses AvalonEdit. Source and MIT license: https://github.com/icsharpcode/AvalonEdit/tree/v6.3.1 — the full license is included in `licenses/AvalonEdit/LICENSE.txt`.
+
 ## TinyPinyin 1.1.0
 
 Source: https://github.com/hstarorg/TinyPinyin.Net

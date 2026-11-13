@@ -1,0 +1,15 @@
+<SyntaxDefinition name="Config" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+    <Color name="Comment" foreground="#64756D" />
+    <Color name="String" foreground="#A13A39" />
+    <Color name="Key" foreground="#215E83" />
+    <Color name="Section" foreground="#6C4484" />
+    <RuleSet>
+        <Span color="String" begin="&quot;" end="&quot;">
+            <RuleSet><Rule>\\.</Rule></RuleSet>
+        </Span>
+        <Span color="String" begin="'" end="'" />
+        <Span color="Comment" begin="(?:^|(?&lt;=\s))[#;]" />
+        <Rule color="Section">^\s*\[+[^\]\r\n]+\]+</Rule>
+        <Rule color="Key">^\s*(?:-\s+)?[\w.-]+(?=\s*[:=])</Rule>
+    </RuleSet>
+</SyntaxDefinition>
