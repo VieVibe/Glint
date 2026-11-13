@@ -5,6 +5,8 @@ using System.Windows.Media;
 using Markdig;
 using Markdig.Extensions.EmphasisExtras;
 using Markdig.Extensions.TaskLists;
+using Markdig.Helpers;
+using Markdig.Parsers;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 using MarkdownTable = Markdig.Extensions.Tables.Table;
@@ -19,9 +21,7 @@ internal static class MarkdownPreview
 {
     private const int MaxNodes = 6_000;
     private const int MaxTableColumns = 24;
-    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder { MaximumNestingDepth = 32 }
-        .DisableHtml().UsePipeTables(new PipeTableOptions { UseGfmRules = true })
-        .UseTaskLists().UseEmphasisExtras(EmphasisExtraOptions.Strikethrough).Build();
+    private static readonly MarkdownPipeline Pipeline = CreatePipeline();
     private static readonly FontFamily Mono = new("Cascadia Mono, Consolas, Microsoft YaHei UI");
     private static readonly Brush Ink = ColorBrush(0x20, 0x31, 0x29);
     private static readonly Brush Muted = ColorBrush(0x52, 0x65, 0x5B);
@@ -29,6 +29,14 @@ internal static class MarkdownPreview
     private static readonly Brush Border = ColorBrush(0xD7, 0xE1, 0xD8);
     private static readonly Brush Tint = ColorBrush(0xEF, 0xF4, 0xEF);
     private static readonly Brush Paper = ColorBrush(0xFC, 0xFD, 0xFB);
+
+    private static MarkdownPipeline CreatePipeline()
+    {
+        var builder = new MarkdownPipelineBuilder { MaximumNestingDepth = 32 };
+        builder.BlockParsers.Replace<HtmlBlockParser>(new MarkdownHtml.StandaloneTagParser());
+        return builder.UsePipeTables(new PipeTableOptions { UseGfmRules = true })
+            .UseTaskLists().UseEmphasisExtras(EmphasisExtraOptions.Strikethrough).Build();
+    }
 
     public static MarkdownDocument? Parse(string source)
     {
@@ -53,7 +61,7 @@ internal static class MarkdownPreview
         {
             FontFamily = new FontFamily("Microsoft YaHei UI"), FontSize = 15, Foreground = Ink, Background = Paper,
             PagePadding = new Thickness(30, 22, 30, 28), MaxPageWidth = 800,
-            IsHyphenationEnabled = false
+            IsHyphenationEnabled = false, TextAlignment = TextAlignment.Left
         };
         AddBlocks(source, document.Blocks);
         return document;
@@ -61,10 +69,38 @@ internal static class MarkdownPreview
 
     private static void AddBlocks(ContainerBlock source, BlockCollection target)
     {
+        Stack<(string Name, BlockCollection Parent)>? containers = null;
         foreach (var block in source)
         {
             switch (block)
             {
+                case MarkdownHtml.StandaloneTag standalone:
+                    var tag = standalone.Tag;
+                    var name = MarkdownHtml.Name(tag);
+                    if (tag.StartsWith("</", StringComparison.Ordinal))
+                    {
+                        if (containers is not null && containers.TryPeek(out var open) && open.Name == name)
+                        {
+                            containers.Pop();
+                            target = open.Parent;
+                        }
+                    }
+                    else if (MarkdownHtml.IsContainer(name))
+                    {
+                        if (tag.EndsWith("/>", StringComparison.Ordinal)) break;
+                        (containers ??= new()).Push((name, target));
+                        if (containers.Count > 32) break;
+                        var wrapper = new Section();
+                        if (MarkdownHtml.Alignment(tag) is { } alignment) wrapper.TextAlignment = alignment;
+                        target.Add(wrapper);
+                        target = wrapper.Blocks;
+                    }
+                    else if (name == "hr") target.Add(HorizontalRule());
+                    else AddHtmlBlock(tag, target);
+                    break;
+                case HtmlBlock html:
+                    AddHtmlBlock(html.Lines.ToString(), target);
+                    break;
                 case HeadingBlock heading:
                     var title = Paragraph(heading.Inline);
                     title.FontSize = heading.Level switch { 1 => 30, 2 => 23, 3 => 19, _ => 16 };
@@ -120,14 +156,49 @@ internal static class MarkdownPreview
                     target.Add(RenderTable(table));
                     break;
                 case ThematicBreakBlock:
-                    target.Add(new Paragraph
-                    {
-                        FontSize = 1, LineHeight = 1, BorderBrush = Border, BorderThickness = new Thickness(0, 0, 0, 1),
-                        Margin = new Thickness(0, 7, 0, 12)
-                    });
+                    target.Add(HorizontalRule());
                     break;
             }
         }
+    }
+
+    private static Paragraph HorizontalRule() => new()
+    {
+        FontSize = 1, LineHeight = 1, BorderBrush = Border, BorderThickness = new Thickness(0, 0, 0, 1),
+        Margin = new Thickness(0, 7, 0, 12)
+    };
+
+    private static void AddHtmlBlock(string html, BlockCollection target)
+    {
+        // Convert HTML to native, inert text elements. Only the visible content is retained.
+        var paragraph = Paragraph(null);
+        string? hidden = null;
+        var start = 0;
+        while (start < html.Length)
+        {
+            var tagStart = html.IndexOf('<', start);
+            if (tagStart < 0) tagStart = html.Length;
+            if (hidden is null && tagStart > start)
+                paragraph.Inlines.Add(new Run(System.Net.WebUtility.HtmlDecode(html[start..tagStart])));
+            if (tagStart == html.Length) break;
+
+            var rest = new StringSlice(html, tagStart, html.Length - 1);
+            if (HtmlHelper.TryParseHtmlTag(ref rest, out var tag))
+            {
+                if (hidden is null && paragraph.Inlines.Count == 0 && MarkdownHtml.Alignment(tag) is { } alignment)
+                    paragraph.TextAlignment = alignment;
+                AddHtmlTag(tag, paragraph.Inlines, ref hidden);
+                start = rest.Start;
+            }
+            else
+            {
+                if (hidden is null && !html.AsSpan(tagStart).StartsWith("<!--", StringComparison.Ordinal))
+                    paragraph.Inlines.Add(new Run("<"));
+                else if (hidden is null) break;
+                start = tagStart + 1;
+            }
+        }
+        if (paragraph.Inlines.Count > 0) target.Add(paragraph);
     }
 
     private static Table RenderTable(MarkdownTable source)
@@ -175,8 +246,24 @@ internal static class MarkdownPreview
 
     private static void AddInlines(ContainerInline? source, InlineCollection target)
     {
+        string? hidden = null;
+        AddInlines(source, target, ref hidden);
+    }
+
+    private static void AddInlines(ContainerInline? source, InlineCollection target, ref string? hidden)
+    {
         for (var inline = source?.FirstChild; inline is not null; inline = inline.NextSibling)
         {
+            if (inline is HtmlInline html)
+            {
+                AddHtmlTag(html.Tag, target, ref hidden);
+                continue;
+            }
+            if (hidden is not null)
+            {
+                if (inline is ContainerInline nested) AddInlines(nested, target, ref hidden);
+                continue;
+            }
             switch (inline)
             {
                 case LiteralInline text: target.Add(new Run(text.Content.ToString())); break;
@@ -189,7 +276,7 @@ internal static class MarkdownPreview
                     var label = new Span { Foreground = Accent, ToolTip = link.Url };
                     if (link.IsImage) label.Inlines.Add(new Run("图片 · "));
                     else label.TextDecorations = TextDecorations.Underline;
-                    AddInlines(link, label.Inlines);
+                    AddInlines(link, label.Inlines, ref hidden);
                     if (label.Inlines.Count == (link.IsImage ? 1 : 0) && link.Url is { } url) label.Inlines.Add(new Run(url));
                     target.Add(label);
                     break;
@@ -197,12 +284,32 @@ internal static class MarkdownPreview
                     Span styled = emphasis.DelimiterChar == '~'
                         ? new Span { TextDecorations = TextDecorations.Strikethrough }
                         : emphasis.DelimiterCount == 2 ? new Bold() : new Italic();
-                    AddInlines(emphasis, styled.Inlines);
+                    AddInlines(emphasis, styled.Inlines, ref hidden);
                     target.Add(styled);
                     break;
-                case ContainerInline container: AddInlines(container, target); break;
+                case ContainerInline container: AddInlines(container, target, ref hidden); break;
             }
         }
+    }
+
+    private static void AddHtmlTag(string tag, InlineCollection target, ref string? hidden)
+    {
+        var name = MarkdownHtml.Name(tag);
+        var closing = tag.StartsWith("</", StringComparison.Ordinal);
+        if (hidden is not null)
+        {
+            if (closing && hidden == name) hidden = null;
+            return;
+        }
+        if (!closing && MarkdownHtml.IsHidden(name) && !tag.EndsWith("/>", StringComparison.Ordinal))
+            hidden = name;
+        else if (!closing && name == "img")
+        {
+            var alt = MarkdownHtml.Attribute(tag, "alt");
+            if (!string.IsNullOrWhiteSpace(alt)) target.Add(new Run("图片 · " + alt) { Foreground = Accent });
+        }
+        else if ((!closing && name == "br") || (closing && name is "p" or "div" or "li"))
+            target.Add(new LineBreak());
     }
 
     private static Brush ColorBrush(byte red, byte green, byte blue)

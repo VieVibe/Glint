@@ -102,6 +102,12 @@ internal static class PreviewWindowChecks
             const string markdownSource = """
                 # 预览标题
 
+                <div align="center">
+                ## Mars Admin
+
+                **居中正文**与<img src="logo.svg" alt="内嵌图片">。
+                </div>
+
                 正文 **加粗** 和 `inline()`，[项目主页](https://example.test)。
 
                 - [x] 已完成
@@ -116,9 +122,30 @@ internal static class PreviewWindowChecks
                 Console.WriteLine("Glint");
                 ```
 
+                ```html
+                <div class="example">代码示例</div>
+                ```
+
                 ![图片说明](https://example.test/image.png)
 
-                <script>keepAsText()</script>
+                <p align="right">HTML 段落<br>换行后的文字</p>
+
+                <img src="logo.svg" alt="独立图片">
+
+                <!--隐藏的注释-->
+                <script>hiddenScript()</script>
+
+                行内 <script>hiddenInlineScript()</script> 正文，`<span>` 和 &lt;em&gt;。
+
+                ---
+
+                <div align='center'>
+
+                **欢迎 Star**
+
+                </div>
+
+                ## 后续内容
                 """;
             File.WriteAllText(markdown, markdownSource);
             var markdownWindow = Create(markdown);
@@ -130,8 +157,17 @@ internal static class PreviewWindowChecks
             var renderedText = new TextRange(markdownView.Document.ContentStart, markdownView.Document.ContentEnd).Text;
             check(blocks.FirstBlock is Paragraph { FontSize: > 20 } && blocks.OfType<Table>().Count() == 1
                 && blocks.OfType<System.Windows.Documents.List>().Count() == 1
-                && renderedText.Contains("Console.WriteLine") && renderedText.Contains("图片说明")
-                && renderedText.Contains("<script>keepAsText()</script>"), "Markdown 渲染标题、列表、表格和代码块，图片和原始 HTML 以文本显示");
+                && renderedText.Contains("Console.WriteLine") && renderedText.Contains("图片说明"),
+                "Markdown 渲染标题、列表、表格和代码块");
+            var centered = blocks.OfType<Section>().Where(section => section.TextAlignment == TextAlignment.Center).ToArray();
+            check(centered.Length == 2 && centered[0].Blocks.FirstBlock is Paragraph { FontSize: > 20 }
+                && centered[1].Blocks.FirstBlock is Paragraph && blocks.LastBlock is Paragraph { TextAlignment: TextAlignment.Left },
+                "README 的 HTML 容器居中排版，结束标签后恢复普通排版");
+            check(!renderedText.Contains("<div align") && !renderedText.Contains("<p align") && !renderedText.Contains("<img")
+                && !renderedText.Contains("隐藏的注释") && !renderedText.Contains("hiddenScript") && !renderedText.Contains("hiddenInlineScript")
+                && renderedText.Contains("内嵌图片") && renderedText.Contains("独立图片") && renderedText.Contains("换行后的文字")
+                && renderedText.Contains("<div class=\"example\">代码示例</div>") && renderedText.Contains("<span>") && renderedText.Contains("<em>"),
+                "排版隐藏 HTML 标签和脚本，保留图片说明、正文和代码示例");
             var firstRow = blocks.OfType<Table>().Single().RowGroups[0].Rows[0];
             check(firstRow.Cells[1].Blocks.FirstBlock is Paragraph { TextAlignment: TextAlignment.Right },
                 "Markdown 表格保留列对齐");
