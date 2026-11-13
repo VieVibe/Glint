@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -96,6 +97,68 @@ internal static class PreviewWindowChecks
             check(editor.FontSize == fontSize / 2 && !((Button)codeWindow.FindName("ZoomOut")).IsEnabled, "滚轮缩小限制在 50%");
             codeWindow.RequestClose();
             Pump(codeWindow.Completion);
+
+            var markdown = Path.Combine(directory, "README.markdown");
+            const string markdownSource = """
+                # 预览标题
+
+                正文 **加粗** 和 `inline()`，[项目主页](https://example.test)。
+
+                - [x] 已完成
+
+                > 引用内容
+
+                | 项目 | 状态 |
+                | --- | ---: |
+                | Glint | 正常 |
+
+                ```csharp
+                Console.WriteLine("Glint");
+                ```
+
+                ![图片说明](https://example.test/image.png)
+
+                <script>keepAsText()</script>
+                """;
+            File.WriteAllText(markdown, markdownSource);
+            var markdownWindow = Create(markdown);
+            Pump(markdownWindow.LoadPreviewAsync());
+            check(markdownWindow.FindName("MarkdownView") is FlowDocumentScrollViewer { Visibility: Visibility.Visible, Document: not null },
+                "Markdown 默认打开原生排版视图");
+            var markdownView = (FlowDocumentScrollViewer)markdownWindow.FindName("MarkdownView");
+            var blocks = markdownView.Document.Blocks;
+            var renderedText = new TextRange(markdownView.Document.ContentStart, markdownView.Document.ContentEnd).Text;
+            check(blocks.FirstBlock is Paragraph { FontSize: > 20 } && blocks.OfType<Table>().Count() == 1
+                && blocks.OfType<System.Windows.Documents.List>().Count() == 1
+                && renderedText.Contains("Console.WriteLine") && renderedText.Contains("图片说明")
+                && renderedText.Contains("<script>keepAsText()</script>"), "Markdown 渲染标题、列表、表格和代码块，图片和原始 HTML 以文本显示");
+            var firstRow = blocks.OfType<Table>().Single().RowGroups[0].Rows[0];
+            check(firstRow.Cells[1].Blocks.FirstBlock is Paragraph { TextAlignment: TextAlignment.Right },
+                "Markdown 表格保留列对齐");
+            Wheel(markdownWindow, markdownView, 120);
+            check(markdownView.Zoom == 110, "Markdown 排版支持滚轮缩放");
+            var mode = (Button)markdownWindow.FindName("MarkdownModeButton");
+            mode.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(markdownView.Visibility == Visibility.Collapsed
+                && markdownWindow.FindName("DocumentText") is TextEditor { Text: markdownSource },
+                "Markdown 可切换回完整源码");
+            mode.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(markdownView.Visibility == Visibility.Visible && markdownView.Zoom == 110, "Markdown 可切回排版并保留缩放比例");
+            markdownWindow.RequestClose();
+            Pump(markdownWindow.Completion);
+            var wideTable = string.Concat(Enumerable.Repeat("| 列 ", 32)) + "|\n"
+                + string.Concat(Enumerable.Repeat("| --- ", 32)) + "|";
+            check(MarkdownPreview.Parse(wideTable) is null, "超宽 Markdown 表格降级为源码视图");
+            check(markdownView.Document is null, "关闭 Markdown 预览释放排版文档");
+            var denseMarkdown = Path.Combine(directory, "复杂.md");
+            File.WriteAllText(denseMarkdown, string.Concat(Enumerable.Repeat("- [ ] 项目\n", 3_001)));
+            markdownWindow = Create(denseMarkdown);
+            Pump(markdownWindow.LoadPreviewAsync());
+            check(markdownWindow.FindName("DocumentSurface") is FrameworkElement { Visibility: Visibility.Visible }
+                && markdownWindow.FindName("MarkdownView") is FlowDocumentScrollViewer { Document: null },
+                "结构复杂的 Markdown 降级为源码视图");
+            markdownWindow.RequestClose();
+            Pump(markdownWindow.Completion);
 
             foreach (var (name, source, language) in new[] { ("main.go", "package main", "Go"),
                 ("lib.rs", "/* nested /* comment */ end */ fn main() {}", "Rust"),

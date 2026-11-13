@@ -9,6 +9,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Glint.Core;
 using Glint.App.Services;
+using Markdig.Syntax;
 using Windows.Data.Pdf;
 using Windows.Storage.Streams;
 using Forms = System.Windows.Forms;
@@ -107,9 +108,15 @@ public partial class PreviewWindow : Window
                     break;
                 case FilePreviewKind.Text:
                 case FilePreviewKind.Office:
-                    var document = await Task.Run(() => FilePreview.ReadDocumentAsync(path, lifetime.Token), lifetime.Token);
+                    var isMarkdown = Path.GetExtension(path).ToLowerInvariant() is ".md" or ".markdown";
+                    var (document, markdown) = await Task.Run(async () =>
+                    {
+                        var result = await FilePreview.ReadDocumentAsync(path, lifetime.Token);
+                        lifetime.Token.ThrowIfCancellationRequested();
+                        return (result, isMarkdown && result.Text.Length > 0 ? MarkdownPreview.Parse(result.Text) : null);
+                    }, lifetime.Token);
                     if (closed) return;
-                    ShowDocument(document, kind);
+                    ShowDocument(document, kind, isMarkdown, markdown);
                     break;
                 default:
                     ShowMessage("此格式暂不支持预览", "按 Enter 或点击“打开”，可使用默认应用查看。");
@@ -125,7 +132,7 @@ public partial class PreviewWindow : Window
         finally { if (slot) LoadSlots.Release(); }
     }
 
-    private void ShowDocument(DocumentPreview document, FilePreviewKind kind)
+    private void ShowDocument(DocumentPreview document, FilePreviewKind kind, bool isMarkdown, MarkdownDocument? markdown)
     {
         if (document.Text.Length == 0)
         {
@@ -138,18 +145,42 @@ public partial class PreviewWindow : Window
         var name = Path.GetFileName(path).ToLowerInvariant();
         var prose = (extension == ".txt" && name != "cmakelists.txt") || extension is ".md" or ".markdown" or ".rst" or ".adoc"
             || name is "readme" or "license" or "licence" or "copying" or "changelog" or "notice";
-        DocumentText.ShowLineNumbers = isText && !prose;
+        DocumentText.ShowLineNumbers = isText && (!prose || isMarkdown);
         if (isText) DocumentText.SyntaxHighlighting = PreviewSyntax.GetDefinition(path, FilePreview.IsEnvironmentFile(path));
         WrapButton.IsChecked = !isText || prose;
         DocumentText.Text = document.Text;
         DocumentSurface.Visibility = WrapButton.Visibility = Visibility.Visible;
+        if (markdown is not null)
+        {
+            MarkdownView.Document = MarkdownPreview.Render(markdown);
+            MarkdownModeButton.Visibility = Visibility.Visible;
+            SetMarkdownMode(rendered: true);
+        }
         ShowZoomControls();
         MessagePanel.Visibility = Visibility.Collapsed;
-        if (IsActive && (Keyboard.FocusedElement is null || Keyboard.FocusedElement == this)) DocumentText.TextArea.Focus();
+        if (IsActive && (Keyboard.FocusedElement is null || Keyboard.FocusedElement == this))
+        {
+            if (markdown is not null) MarkdownView.Focus();
+            else DocumentText.TextArea.Focus();
+        }
         var shownLines = DocumentText.Document.LineCount;
-        StatusLabel.Text = (DocumentText.ShowLineNumbers ? $"{shownLines:N0} 行" : document.Format)
+        var format = isMarkdown ? markdown is not null ? "Markdown" : "Markdown 源码 · 内容结构较复杂"
+            : DocumentText.ShowLineNumbers ? $"{shownLines:N0} 行" : document.Format;
+        StatusLabel.Text = format
             + (document.Truncated ? " · 仅显示前 20 万字符" : "");
         StatusLabel.ToolTip = StatusLabel.Text;
+    }
+
+    private void OnMarkdownModeClick(object sender, RoutedEventArgs e) =>
+        SetMarkdownMode(MarkdownView.Visibility != Visibility.Visible);
+
+    private void SetMarkdownMode(bool rendered)
+    {
+        MarkdownView.Visibility = rendered ? Visibility.Visible : Visibility.Collapsed;
+        DocumentSurface.Visibility = WrapButton.Visibility = rendered ? Visibility.Collapsed : Visibility.Visible;
+        MarkdownModeButton.Content = rendered ? "源码" : "排版";
+        MarkdownView.Zoom = zoom;
+        DocumentText.FontSize = defaultFontSize * zoom / DefaultZoom;
     }
 
     private void ShowImage(BitmapSource bitmap)
@@ -195,7 +226,12 @@ public partial class PreviewWindow : Window
         var notches = e.Delta / 120d;
         if (Keyboard.Modifiers == ModifierKeys.Shift)
         {
-            if (DocumentSurface.Visibility == Visibility.Visible)
+            if (MarkdownView.Visibility == Visibility.Visible)
+            {
+                if (MarkdownView.Template?.FindName("PART_ContentHost", MarkdownView) is not ScrollViewer scroller) return;
+                scroller.ScrollToVerticalOffset(scroller.VerticalOffset - notches * 48);
+            }
+            else if (DocumentSurface.Visibility == Visibility.Visible)
                 DocumentText.ScrollToVerticalOffset(DocumentText.VerticalOffset - notches * DocumentText.FontSize * 3);
             else
                 VisualScroll.ScrollToVerticalOffset(VisualScroll.VerticalOffset - notches * 48);
@@ -219,7 +255,11 @@ public partial class PreviewWindow : Window
         if (zoom == previousZoom) return;
         UpdateZoomControls();
 
-        if (DocumentSurface.Visibility == Visibility.Visible)
+        if (MarkdownView.Visibility == Visibility.Visible)
+        {
+            MarkdownView.Zoom = zoom;
+        }
+        else if (DocumentSurface.Visibility == Visibility.Visible)
         {
             var textView = DocumentText.TextArea.TextView;
             var vertical = DocumentText.VerticalOffset;
@@ -349,7 +389,8 @@ public partial class PreviewWindow : Window
     private void ShowMessage(string title, string hint)
     {
         VisualSurface.Visibility = DocumentSurface.Visibility = WrapButton.Visibility = Video.Visibility
-            = PdfControls.Visibility = VideoControls.Visibility = ZoomControls.Visibility = Visibility.Collapsed;
+            = PdfControls.Visibility = VideoControls.Visibility = ZoomControls.Visibility
+            = MarkdownView.Visibility = MarkdownModeButton.Visibility = Visibility.Collapsed;
         MessagePanel.Visibility = Visibility.Visible;
         MessageTitle.Text = title;
         MessageHint.Text = hint;
@@ -360,6 +401,15 @@ public partial class PreviewWindow : Window
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.M && MarkdownModeButton.Visibility == Visibility.Visible)
+        {
+            var showRendered = MarkdownView.Visibility != Visibility.Visible;
+            SetMarkdownMode(showRendered);
+            if (showRendered) MarkdownView.Focus();
+            else DocumentText.TextArea.Focus();
+            e.Handled = true;
+            return;
+        }
         if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.W && WrapButton.Visibility == Visibility.Visible)
         {
             WrapButton.IsChecked = WrapButton.IsChecked != true;
@@ -370,7 +420,7 @@ public partial class PreviewWindow : Window
         if (e.Key is Key.Space or Key.Escape) { e.Handled = true; RequestClose(); }
         else if (e.Key == Key.Enter)
         {
-            if (ZoomControls.IsKeyboardFocusWithin) return;
+            if (ZoomControls.IsKeyboardFocusWithin || MarkdownModeButton.IsKeyboardFocused) return;
             e.Handled = true;
             if (WrapButton.IsKeyboardFocused) WrapButton.IsChecked = WrapButton.IsChecked != true;
             else if (CloseButton.IsKeyboardFocused) RequestClose();
@@ -425,6 +475,7 @@ public partial class PreviewWindow : Window
         ReleaseVideo();
         PreviewImage.Source = null;
         DocumentText.Clear();
+        MarkdownView.Document = null;
         Completion = ReleaseResourcesAsync();
     }
 

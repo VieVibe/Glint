@@ -14,6 +14,10 @@ C#/WinRT source and MIT license: https://github.com/microsoft/CsWinRT — the fu
 
 The read-only text preview uses AvalonEdit. Source and MIT license: https://github.com/icsharpcode/AvalonEdit/tree/v6.3.1 — the full license is included in `licenses/AvalonEdit/LICENSE.txt`.
 
+## Markdig 1.6.0
+
+The Markdown preview uses Markdig. Source and BSD-2-Clause license: https://github.com/xoofx/markdig/tree/1.6.0 — the full license is included in `licenses/Markdig/LICENSE.txt`.
+
 ## TinyPinyin 1.1.0
 
 Source: https://github.com/hstarorg/TinyPinyin.Net

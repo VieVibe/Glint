@@ -88,6 +88,8 @@
                                Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Button x:Name="MarkdownModeButton" Content="源码" Visibility="Collapsed" Margin="0,0,6,0"
+                            ToolTip="切换 Markdown 排版和源码 (Ctrl+M)" Click="OnMarkdownModeClick" />
                     <ToggleButton x:Name="WrapButton" Content="换行" Visibility="Collapsed" Margin="0,0,6,0" ToolTip="自动换行 (Ctrl+W)"
                                   AutomationProperties.Name="自动换行 (Ctrl+W)" />
                     <Button Background="#E3EDE4" Foreground="#214D37" Click="OnOpenClick" ToolTip="使用默认应用打开 (Enter)"
@@ -126,6 +128,10 @@
                                          HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                                          AutomationProperties.Name="文档预览内容" />
                     </Border>
+                    <FlowDocumentScrollViewer x:Name="MarkdownView" Visibility="Collapsed" Background="#FCFDFB"
+                                              MinZoom="50" MaxZoom="300" IsToolBarVisible="False"
+                                              HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                                              AutomationProperties.Name="Markdown 排版预览" />
                     <StackPanel x:Name="MessagePanel" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="30" MaxWidth="500">
                         <Border Width="52" Height="52" Background="#DCE9DE" CornerRadius="14" Margin="0,0,0,16">
                             <Path Data="M 2,1 L 12,1 L 17,6 L 17,21 L 2,21 Z M 12,1 L 12,6 L 17,6 M 6,11 L 13,11 M 6,15 L 13,15"
