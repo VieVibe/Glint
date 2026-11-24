@@ -9,7 +9,7 @@ public enum FilePreviewKind { Unsupported, Image, Video, Text, Pdf, Office }
 
 public sealed record DocumentPreview(string Text, bool Truncated, string Format);
 
-public static class FilePreview
+public static partial class FilePreview
 {
     public const int MaxTextCharacters = 200_000;
     private const int MaxXmlCharacters = 4_000_000;
@@ -86,18 +86,14 @@ public static class FilePreview
         return new(text, count > MaxTextCharacters, "文字预览");
     }
 
-    private static DocumentPreview ReadOffice(string path, CancellationToken cancellationToken)
+    private static T ReadOfficePackage<T>(string path, CancellationToken cancellationToken,
+        Func<ZipArchive, Func<ZipArchiveEntry, XDocument>, T> read)
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         if (stream.Length > 64_000_000) throw new InvalidDataException("文档文件过大，请使用默认应用打开。");
         using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
         if (archive.Entries.Count > 4096) throw new InvalidDataException("文档内容过多，请使用默认应用打开。");
-        var output = new StringBuilder();
-        var truncated = false;
         long xmlBudget = 16_000_000;
-        XNamespace word = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-        XNamespace sheet = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
-        XNamespace drawing = "http://schemas.openxmlformats.org/drawingml/2006/main";
 
         XDocument ReadXml(ZipArchiveEntry entry)
         {
@@ -109,6 +105,21 @@ public static class FilePreview
                 { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, MaxCharactersInDocument = MaxXmlCharacters });
             return XDocument.Load(xml);
         }
+        return read(archive, ReadXml);
+    }
+
+    private static DocumentPreview ReadOffice(string path, CancellationToken cancellationToken) =>
+        ReadOfficePackage(path, cancellationToken, (archive, readXml) =>
+            ReadOfficeText(path, cancellationToken, archive, readXml));
+
+    private static DocumentPreview ReadOfficeText(string path, CancellationToken cancellationToken,
+        ZipArchive archive, Func<ZipArchiveEntry, XDocument> readXml)
+    {
+        var output = new StringBuilder();
+        var truncated = false;
+        XNamespace word = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        XNamespace sheet = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+        XNamespace drawing = "http://schemas.openxmlformats.org/drawingml/2006/main";
 
         void Append(string value)
         {
@@ -122,7 +133,7 @@ public static class FilePreview
         if (extension == ".docx")
         {
             var entry = archive.GetEntry("word/document.xml") ?? throw new InvalidDataException("Word 文档内容缺失。");
-            foreach (var paragraph in ReadXml(entry).Descendants(word + "p"))
+            foreach (var paragraph in readXml(entry).Descendants(word + "p"))
             {
                 foreach (var node in paragraph.Descendants())
                 {
@@ -141,7 +152,7 @@ public static class FilePreview
             foreach (var entry in entries)
             {
                 Append($"── 幻灯片 {EntryNumber(entry)} ──\n\n");
-                foreach (var paragraph in ReadXml(entry).Descendants(drawing + "p"))
+                foreach (var paragraph in readXml(entry).Descendants(drawing + "p"))
                     Append(string.Concat(paragraph.Descendants(drawing + "t").Select(node => node.Value)) + "\n");
                 Append("\n");
                 if (truncated) break;
@@ -149,15 +160,13 @@ public static class FilePreview
         }
         else
         {
-            var sharedEntry = archive.GetEntry("xl/sharedStrings.xml");
-            var shared = sharedEntry is null ? [] : ReadXml(sharedEntry).Descendants(sheet + "si")
-                .Select(item => string.Concat(item.Descendants(sheet + "t").Select(node => node.Value))).ToArray();
+            var shared = ReadSharedStrings(archive.GetEntry("xl/sharedStrings.xml"), readXml);
             var entries = NumberedEntries(archive, "xl/worksheets/sheet");
             if (entries.Length == 0) throw new InvalidDataException("Excel 文档内容缺失。");
             foreach (var entry in entries)
             {
                 Append($"── 工作表 {EntryNumber(entry)} ──\n\n");
-                foreach (var row in ReadXml(entry).Descendants(sheet + "row"))
+                foreach (var row in readXml(entry).Descendants(sheet + "row"))
                 {
                     var column = 0;
                     foreach (var cell in row.Elements(sheet + "c"))
@@ -168,12 +177,7 @@ public static class FilePreview
                         // Keep empty columns visible without allowing huge sparse rows to allocate unbounded text.
                         var gapEnd = Math.Min(targetColumn - 1, column + 100);
                         while (column < gapEnd && !truncated) { Append("\t"); column++; }
-                        var value = (string?)cell.Element(sheet + "v") ?? "";
-                        var type = (string?)cell.Attribute("t");
-                        if (type == "s" && int.TryParse(value, out var index) && index >= 0 && index < shared.Length) value = shared[index];
-                        else if (type == "inlineStr") value = string.Concat(cell.Descendants(sheet + "t").Select(node => node.Value));
-                        else if (value.Length == 0 && cell.Element(sheet + "f") is { } formula) value = "=" + formula.Value;
-                        Append(value + "\t");
+                        Append(ReadCell(cell, shared) + "\t");
                         column++;
                         if (truncated) break;
                     }

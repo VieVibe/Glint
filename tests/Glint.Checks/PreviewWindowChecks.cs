@@ -1,6 +1,8 @@
 using System.IO;
+using System.IO.Compression;
 using System.Reflection;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -87,16 +89,20 @@ internal static class PreviewWindowChecks
             ((System.Windows.Controls.Primitives.ToggleButton)codeWindow.FindName("WrapButton")).IsChecked = true;
             check(editor.WordWrap, "换行开关更新源码视图");
             var fontSize = editor.FontSize;
-            Wheel(codeWindow, editor, 120);
-            check(editor.FontSize > fontSize && editor.IsReadOnly, "直接滚轮放大源码字号");
             Wheel(codeWindow, editor, -120);
+            check(editor.FontSize == fontSize, "直接滚轮浏览源码时保持字号");
+            Wheel(codeWindow, editor, 120, shift: true);
+            check(editor.FontSize > fontSize && editor.IsReadOnly, "Shift 加滚轮放大源码字号");
+            Wheel(codeWindow, editor, -120, shift: true);
             check(editor.FontSize == fontSize, "反向滚轮恢复源码字号");
-            Wheel(codeWindow, editor, 3600);
+            Wheel(codeWindow, editor, 3600, shift: true);
             check(editor.FontSize == 3 * fontSize && !((Button)codeWindow.FindName("ZoomIn")).IsEnabled, "滚轮放大限制在 300%");
-            Wheel(codeWindow, editor, -3600);
+            Wheel(codeWindow, editor, -3600, shift: true);
             check(editor.FontSize == fontSize / 2 && !((Button)codeWindow.FindName("ZoomOut")).IsEnabled, "滚轮缩小限制在 50%");
             codeWindow.RequestClose();
             Pump(codeWindow.Completion);
+
+            CheckWorkbook(directory, check);
 
             var markdown = Path.Combine(directory, "README.markdown");
             const string markdownSource = """
@@ -171,8 +177,8 @@ internal static class PreviewWindowChecks
             var firstRow = blocks.OfType<Table>().Single().RowGroups[0].Rows[0];
             check(firstRow.Cells[1].Blocks.FirstBlock is Paragraph { TextAlignment: TextAlignment.Right },
                 "Markdown 表格保留列对齐");
-            Wheel(markdownWindow, markdownView, 120);
-            check(markdownView.Zoom == 110, "Markdown 排版支持滚轮缩放");
+            Wheel(markdownWindow, markdownView, 120, shift: true);
+            check(markdownView.Zoom == 110, "Markdown 排版支持 Shift 加滚轮缩放");
             var mode = (Button)markdownWindow.FindName("MarkdownModeButton");
             mode.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             check(markdownView.Visibility == Visibility.Collapsed
@@ -216,10 +222,20 @@ internal static class PreviewWindowChecks
             content.UpdateLayout();
             var page = (Image)window.FindName("PreviewImage");
             var pageHeight = page.ActualHeight;
-            Wheel(window, page, 480);
+            Wheel(window, page, 480, shift: true);
             content.UpdateLayout();
             check(pageHeight > 0 && page.ActualHeight > pageHeight
                 && window.FindName("VisualScroll") is ScrollViewer { ScrollableHeight: > 0 }, "PDF 放大后可滚动查看超出窗口的部分");
+            var scroller = (ScrollViewer)window.FindName("VisualScroll");
+            scroller.ScrollToTop();
+            content.UpdateLayout();
+            var zoomedHeight = page.ActualHeight;
+            Wheel(window, page, -120);
+            content.UpdateLayout();
+            check(scroller.VerticalOffset > 0 && page.ActualHeight == zoomedHeight, "直接滚轮向下浏览 PDF 并保持缩放比例");
+            Wheel(window, page, 120);
+            content.UpdateLayout();
+            check(scroller.VerticalOffset == 0 && page.ActualHeight == zoomedHeight, "反向滚轮向上浏览 PDF 并保持缩放比例");
             ((Button)window.FindName("ResetZoom")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             content.UpdateLayout();
             check(Math.Abs(page.ActualHeight - pageHeight) < 1
@@ -270,6 +286,76 @@ internal static class PreviewWindowChecks
         finally { Directory.Delete(directory, recursive: true); }
     }
 
+    private static void CheckWorkbook(string directory, Action<bool, string> check)
+    {
+        var path = Path.Combine(directory, "表格.XLSX");
+        using (var archive = new ZipArchive(File.Create(path), ZipArchiveMode.Create))
+        {
+            void Write(string name, string xml)
+            {
+                using var writer = new StreamWriter(archive.CreateEntry(name).Open());
+                writer.Write(xml);
+            }
+
+            Write("xl/workbook.xml", """
+                <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+                          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+                  <sheets><sheet name="汇总" sheetId="1" r:id="rId2"/><sheet name="明细" sheetId="2" r:id="rId1"/></sheets>
+                </workbook>
+                """);
+            Write("xl/_rels/workbook.xml.rels", """
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+                  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="/xl/worksheets/summary.xml"/>
+                </Relationships>
+                """);
+            Write("xl/sharedStrings.xml", """
+                <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>共享文字</t></si></sst>
+                """);
+            Write("xl/worksheets/summary.xml", """
+                <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+                  <row r="2"><c r="A2" t="s"><v>0</v></c><c r="C2" t="inlineStr"><is><t>内联&#10;文字</t></is></c></row>
+                  <row r="900"><c r="A900"><v>99</v></c></row>
+                </sheetData></worksheet>
+                """);
+            Write("xl/worksheets/sheet1.xml", """
+                <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+                  <row r="1"><c r="A1"><f>40+2</f><v>42</v></c><c r="B1" t="b"><v>1</v></c></row>
+                </sheetData></worksheet>
+                """);
+        }
+
+        var window = Create(path);
+        Pump(window.LoadPreviewAsync());
+        var grid = (DataGrid)window.FindName("WorkbookGrid");
+        check(grid.IsReadOnly && ((DockPanel)window.FindName("WorkbookView")).Visibility == Visibility.Visible
+            && grid.Items.Count == 2 && grid.Columns.Count == 3
+            && Equals(grid.Columns[2].Header, "C")
+            && ((WorksheetRow)grid.Items[1])[0] == "共享文字"
+            && ((WorksheetRow)grid.Items[1])[1] == ""
+            && ((WorksheetRow)grid.Items[1])[2] == "内联\n文字",
+            "Excel 用只读表格保留空行、空列和单元格内换行");
+        var content = (FrameworkElement)window.Content;
+        var size = new Size(960, 720);
+        content.Measure(size);
+        content.Arrange(new Rect(size));
+        content.UpdateLayout();
+        check(grid.Columns[2].GetCellContent(grid.Items[1]) is TextBlock { Text: "内联\n文字", TextWrapping: TextWrapping.Wrap },
+            "Excel 单元格内容和换行实际绑定到网格");
+        var status = (TextBlock)window.FindName("StatusLabel");
+        check(status.Text.Contains("部分"), "Excel 超出预览范围时显示提示");
+        var picker = (ComboBox)window.FindName("WorksheetPicker");
+        check(picker.Items.Cast<WorksheetPreview>().Select(sheet => sheet.Name).SequenceEqual(["汇总", "明细"]),
+            "Excel 使用工作簿声明的工作表顺序和名称");
+        picker.SelectedIndex = 1;
+        check(grid.Items.Count == 1 && grid.Columns.Count == 2
+            && ((WorksheetRow)grid.Items[0])[0] == "42" && ((WorksheetRow)grid.Items[0])[1] == "TRUE",
+            "Excel 切换工作表并显示公式缓存值和布尔值");
+        window.RequestClose();
+        Pump(window.Completion);
+        using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) { }
+    }
+
     private static PreviewWindow Create(string path)
     {
         var preview = new PreviewWindow(path) { ShowInTaskbar = false, ShowActivated = false };
@@ -277,9 +363,28 @@ internal static class PreviewWindowChecks
         return preview;
     }
 
-    private static void Wheel(PreviewWindow window, UIElement source, int delta) =>
-        window.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, delta)
-        { RoutedEvent = Mouse.PreviewMouseWheelEvent, Source = source });
+    private static void Wheel(PreviewWindow window, UIElement source, int delta, bool shift = false)
+    {
+        // Keyboard state is local to this test thread's input queue.
+        var previous = new byte[256];
+        var keys = new byte[256];
+        keys[KeyInterop.VirtualKeyFromKey(Key.LeftShift)] = keys[0x10] = shift ? (byte)0x80 : (byte)0;
+        if (!GetKeyboardState(previous) || !SetKeyboardState(keys))
+            throw new InvalidOperationException("无法设置滚轮检查的键盘状态。");
+
+        try
+        {
+            window.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, delta)
+            { RoutedEvent = Mouse.PreviewMouseWheelEvent, Source = source });
+        }
+        finally { SetKeyboardState(previous); }
+    }
+
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetKeyboardState([Out] byte[] keys);
+
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetKeyboardState(byte[] keys);
 
     private static void Pump(Task task)
     {

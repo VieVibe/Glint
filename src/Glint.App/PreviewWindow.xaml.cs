@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media.Imaging;
@@ -30,6 +31,7 @@ public partial class PreviewWindow : Window
     private uint pageIndex;
     private double zoom = DefaultZoom;
     private bool closing, closed, playing, seeking, updatingPosition, opening, activated;
+    private bool workbookTruncated;
     internal Task Completion { get; private set; } = Task.CompletedTask;
 
     public PreviewWindow(string path)
@@ -106,6 +108,16 @@ public partial class PreviewWindow : Window
                     PdfControls.Visibility = Visibility.Visible;
                     await RenderPageAsync();
                     break;
+                case FilePreviewKind.Office when Path.GetExtension(path).Equals(".xlsx", StringComparison.OrdinalIgnoreCase):
+                    var workbook = await FilePreview.ReadWorkbookAsync(path, lifetime.Token);
+                    if (closed) return;
+                    workbookTruncated = workbook.Truncated;
+                    WorkbookView.Visibility = Visibility.Visible;
+                    WorksheetPicker.ItemsSource = workbook.Sheets;
+                    WorksheetPicker.SelectedIndex = 0;
+                    MessagePanel.Visibility = Visibility.Collapsed;
+                    if (IsActive && (Keyboard.FocusedElement is null || Keyboard.FocusedElement == this)) WorkbookGrid.Focus();
+                    break;
                 case FilePreviewKind.Text:
                 case FilePreviewKind.Office:
                     var isMarkdown = Path.GetExtension(path).ToLowerInvariant() is ".md" or ".markdown";
@@ -130,6 +142,44 @@ public partial class PreviewWindow : Window
             if (!closed) ShowMessage("无法预览此文件", exception.Message);
         }
         finally { if (slot) LoadSlots.Release(); }
+    }
+
+    private void OnWorksheetChanged(object sender, SelectionChangedEventArgs e)
+    {
+        WorkbookGrid.ItemsSource = null;
+        WorkbookGrid.Columns.Clear();
+        if (WorksheetPicker.SelectedItem is not WorksheetPreview sheet) return;
+
+        var cellStyle = new Style(typeof(TextBlock), DataGridTextColumn.DefaultElementStyle);
+        cellStyle.Setters.Add(new Setter(TextBlock.TextWrappingProperty, TextWrapping.Wrap));
+        cellStyle.Setters.Add(new Setter(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis));
+        cellStyle.Setters.Add(new Setter(FrameworkElement.MaxHeightProperty, 76d));
+        cellStyle.Setters.Add(new Setter(FrameworkElement.ToolTipProperty, new Binding("Text") { RelativeSource = RelativeSource.Self }));
+        for (var column = 0; column < sheet.ColumnCount; column++)
+        {
+            WorkbookGrid.Columns.Add(new DataGridTextColumn
+            {
+                Header = ExcelColumnName(column),
+                Binding = new Binding($"[{column}]"),
+                ElementStyle = cellStyle,
+                Width = 140
+            });
+        }
+        WorkbookGrid.ItemsSource = sheet.Rows;
+        if (sheet.Rows.Count > 0 && WorkbookGrid.Columns.Count > 0)
+            WorkbookGrid.ScrollIntoView(sheet.Rows[0], WorkbookGrid.Columns[0]);
+
+        StatusLabel.Text = sheet.ColumnCount == 0 ? "Excel 表格预览 · 此工作表没有可显示的单元格" : "Excel 表格预览";
+        if (sheet.Truncated || workbookTruncated) StatusLabel.Text += " · 仅显示部分内容";
+        StatusLabel.ToolTip = StatusLabel.Text;
+    }
+
+    private static string ExcelColumnName(int index)
+    {
+        var name = "";
+        for (var column = index + 1; column > 0; column = (column - 1) / 26)
+            name = (char)('A' + (column - 1) % 26) + name;
+        return name;
     }
 
     private void ShowDocument(DocumentPreview document, FilePreviewKind kind, bool isMarkdown, MarkdownDocument? markdown)
@@ -224,7 +274,7 @@ public partial class PreviewWindow : Window
     {
         if (ZoomControls.Visibility != Visibility.Visible || e.Delta == 0) return;
         var notches = e.Delta / 120d;
-        if (Keyboard.Modifiers == ModifierKeys.Shift)
+        if (Keyboard.Modifiers == ModifierKeys.None)
         {
             if (MarkdownView.Visibility == Visibility.Visible)
             {
@@ -236,7 +286,7 @@ public partial class PreviewWindow : Window
             else
                 VisualScroll.ScrollToVerticalOffset(VisualScroll.VerticalOffset - notches * 48);
         }
-        else if (Keyboard.Modifiers == ModifierKeys.None)
+        else if (Keyboard.Modifiers == ModifierKeys.Shift)
             SetZoom(zoom + notches * ZoomStep,
                 VisualSurface.Visibility == Visibility.Visible ? e.GetPosition(VisualScroll) : null);
         else return;
@@ -390,7 +440,7 @@ public partial class PreviewWindow : Window
     {
         VisualSurface.Visibility = DocumentSurface.Visibility = WrapButton.Visibility = Video.Visibility
             = PdfControls.Visibility = VideoControls.Visibility = ZoomControls.Visibility
-            = MarkdownView.Visibility = MarkdownModeButton.Visibility = Visibility.Collapsed;
+            = MarkdownView.Visibility = MarkdownModeButton.Visibility = WorkbookView.Visibility = Visibility.Collapsed;
         MessagePanel.Visibility = Visibility.Visible;
         MessageTitle.Text = title;
         MessageHint.Text = hint;
@@ -417,6 +467,7 @@ public partial class PreviewWindow : Window
             return;
         }
         if (Keyboard.Modifiers != ModifierKeys.None) return;
+        if (WorksheetPicker.IsDropDownOpen && e.Key is Key.Enter or Key.Escape or Key.Space) return;
         if (e.Key is Key.Space or Key.Escape) { e.Handled = true; RequestClose(); }
         else if (e.Key == Key.Enter)
         {
@@ -476,6 +527,7 @@ public partial class PreviewWindow : Window
         PreviewImage.Source = null;
         DocumentText.Clear();
         MarkdownView.Document = null;
+        WorksheetPicker.ItemsSource = null;
         Completion = ReleaseResourcesAsync();
     }
 

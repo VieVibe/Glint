@@ -132,6 +132,26 @@
                                               MinZoom="50" MaxZoom="300" IsToolBarVisible="False"
                                               HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
                                               AutomationProperties.Name="Markdown 排版预览" />
+                    <DockPanel x:Name="WorkbookView" Visibility="Collapsed" Background="#FCFDFB">
+                        <ComboBox x:Name="WorksheetPicker" DockPanel.Dock="Top" HorizontalAlignment="Left"
+                                  MinWidth="160" MaxWidth="320" Margin="10,8" Padding="6,3"
+                                  DisplayMemberPath="Name" SelectionChanged="OnWorksheetChanged"
+                                  AutomationProperties.Name="切换工作表" />
+                        <DataGrid x:Name="WorkbookGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                                  EnableColumnVirtualization="True" CanUserSortColumns="False"
+                                  CanUserReorderColumns="False" CanUserResizeRows="False"
+                                  BorderThickness="0" Background="#FCFDFB" RowBackground="#FCFDFB"
+                                  AlternatingRowBackground="#F1F5F0" RowHeaderWidth="54"
+                                  HorizontalGridLinesBrush="{StaticResource Frame}" VerticalGridLinesBrush="{StaticResource Frame}"
+                                  SelectionUnit="CellOrRowHeader" ClipboardCopyMode="ExcludeHeader"
+                                  AutomationProperties.Name="Excel 工作表内容">
+                            <DataGrid.RowHeaderStyle>
+                                <Style TargetType="DataGridRowHeader">
+                                    <Setter Property="Content" Value="{Binding Item.Number, RelativeSource={RelativeSource AncestorType=DataGridRow}}" />
+                                </Style>
+                            </DataGrid.RowHeaderStyle>
+                        </DataGrid>
+                    </DockPanel>
                     <StackPanel x:Name="MessagePanel" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="30" MaxWidth="500">
                         <Border Width="52" Height="52" Background="#DCE9DE" CornerRadius="14" Margin="0,0,0,16">
                             <Path Data="M 2,1 L 12,1 L 17,6 L 17,21 L 2,21 Z M 12,1 L 12,6 L 17,6 M 6,11 L 13,11 M 6,15 L 13,15"
@@ -165,8 +185,8 @@
                         <Button x:Name="ZoomOut" Content="−" Width="26" Padding="0" Click="OnZoomOut"
                                 ToolTip="缩小" AutomationProperties.Name="缩小预览" />
                         <Button x:Name="ResetZoom" Content="100%" MinWidth="47" Padding="4,0" Click="OnResetZoom"
-                                ToolTip="滚轮缩放 · Shift + 滚轮滚动 · 点击恢复 100%"
-                                AutomationProperties.HelpText="滚轮缩放，Shift 加滚轮滚动，点击恢复 100%" />
+                                ToolTip="滚轮上下滚动 · Shift + 滚轮缩放 · 点击恢复 100%"
+                                AutomationProperties.HelpText="滚轮上下滚动，Shift 加滚轮缩放，点击恢复 100%" />
                         <Button x:Name="ZoomIn" Content="+" Width="26" Padding="0" Click="OnZoomIn"
                                 ToolTip="放大" AutomationProperties.Name="放大预览" />
                     </StackPanel>
